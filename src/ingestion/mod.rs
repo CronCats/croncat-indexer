@@ -19,6 +19,7 @@ mod tests {
     #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
     struct Block(u64);
 
+    #[ignore]
     #[tokio::test]
     #[cfg_attr(tarpaulin, ignore)]
     async fn system_architecture() {

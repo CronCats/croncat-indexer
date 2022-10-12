@@ -3,7 +3,9 @@ name = "croncat-indexer"
 version = "0.1.0"
 edition = "2021"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "croncat_indexer"
+path = "src/lib.rs"
 
 [dependencies]
 async-stream = "0.3.3"
@@ -19,3 +21,5 @@ tokio-retry = "0.3.0"
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
 delegate = "0.8.0"
+sea-orm = { version = "0.9.3", features = ["runtime-tokio-native-tls", "sqlx-postgres"] }
+chrono = "0.4.22"

@@ -1,4 +1,9 @@
+#![allow(dead_code)]
+
 use std::time::SystemTime;
+
+use color_eyre::Result;
+use tokio::task::JoinHandle;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LastSeen<T>
@@ -24,7 +29,6 @@ where
     }
 }
 
-#[allow(dead_code)]
 pub fn is_sorted<T: IntoIterator>(t: T) -> bool
 where
     <T as IntoIterator>::Item: std::cmp::PartialOrd,
@@ -45,7 +49,6 @@ where
     }
 }
 
-#[allow(dead_code)]
 pub fn no_sequential_duplicates<T: IntoIterator>(t: T) -> bool
 where
     <T as IntoIterator>::Item: std::cmp::PartialEq,
@@ -63,6 +66,17 @@ where
         .is_ok()
     } else {
         true
+    }
+}
+
+///
+/// Flatten join handle results.
+///
+pub async fn flatten_join<T>(handle: JoinHandle<Result<T>>) -> Result<T> {
+    match handle.await {
+        Ok(Ok(result)) => Ok(result),
+        Ok(Err(err)) => Err(err),
+        Err(err) => Err(err.into()),
     }
 }
 
