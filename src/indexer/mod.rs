@@ -3,7 +3,7 @@ use sea_orm::entity::prelude::*;
 use sea_orm::Set;
 
 // Sane aliases
-use crate::block::Block;
+use crate::block_stream::Block;
 use model::block::ActiveModel as BlockModel;
 
 // Tell clippy to ignore the generated model code.

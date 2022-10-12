@@ -1,7 +1,7 @@
 #![feature(type_alias_impl_trait)]
 
 use crate::util::flatten_join;
-use block::{poll_stream_blocks, ws_block_stream};
+use block_stream::{poll_stream_blocks, ws_block_stream};
 use color_eyre::{Report, Result};
 use ingestion::{Dispatcher, ProviderSystem, Sequencer};
 use sea_orm::Database;
@@ -11,7 +11,7 @@ use tokio::{
 };
 use tracing::info;
 
-pub mod block;
+pub mod block_stream;
 pub mod env;
 pub mod indexer;
 pub mod ingestion;
@@ -54,7 +54,7 @@ async fn main() -> Result<()> {
 
         while let Ok(block) = dispatcher_rx.recv().await {
             info!(
-                "Indexing block {} @ {}",
+                "Indexing block {} from {}",
                 block.header().height,
                 block.header().time
             );
