@@ -23,7 +23,17 @@ args = ["build"]
 command = "cargo"
 args = ["test"]
 
-[tasks.migrate]
+[tasks.migrate-up]
+install_crate = "sea-orm-cli"
+command = "sea-orm-cli"
+args = ["migrate", "up"]
+
+[tasks.migrate-down]
+install_crate = "sea-orm-cli"
+command = "sea-orm-cli"
+args = ["migrate", "down"]
+
+[tasks.migrate-refresh]
 install_crate = "sea-orm-cli"
 command = "sea-orm-cli"
 args = ["migrate", "refresh"]
