@@ -5,10 +5,7 @@ use block_stream::{poll_stream_blocks, ws_block_stream};
 use color_eyre::{Report, Result};
 use ingestion::{Dispatcher, ProviderSystem, Sequencer};
 use sea_orm::Database;
-use tokio::{
-    sync::{broadcast, mpsc},
-    try_join,
-};
+use tokio::sync::{broadcast, mpsc};
 use tracing::info;
 
 pub mod block_stream;
@@ -64,11 +61,11 @@ async fn main() -> Result<()> {
         Ok::<(), Report>(())
     });
 
-    let _ = try_join!(
-        flatten_join(provider_system_handle),
-        flatten_join(sequencer_handle),
-        flatten_join(dispatcher_handle),
-        flatten_join(indexer_handle),
+    let _ = try_flat_join!(
+        provider_system_handle,
+        sequencer_handle,
+        dispatcher_handle,
+        indexer_handle,
     )?;
 
     Ok(())

@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use std::time::SystemTime;
 
 use color_eyre::Result;
@@ -80,6 +78,13 @@ pub async fn flatten_join<T>(handle: JoinHandle<Result<T>>) -> Result<T> {
     }
 }
 
+/// Macro to flatten join handles into a try_join!
+#[macro_export]
+macro_rules! try_flat_join {
+    ($($fut:expr),+ $(,)?) => {
+        tokio::try_join!($(flatten_join($fut)),+)
+    };
+}
 #[cfg(test)]
 mod tests {
     use std::time::SystemTime;
