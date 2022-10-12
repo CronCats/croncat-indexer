@@ -1,8 +1,8 @@
 #![feature(type_alias_impl_trait)]
 
+use crate::util::flatten_join;
 use block::{poll_stream_blocks, ws_block_stream};
 use color_eyre::{Report, Result};
-use croncat_indexer::flatten_join;
 use ingestion::{Dispatcher, ProviderSystem, Sequencer};
 use sea_orm::Database;
 use tokio::{
@@ -11,11 +11,11 @@ use tokio::{
 };
 use tracing::info;
 
-mod block;
-mod env;
-mod indexer;
-mod ingestion;
-mod util;
+pub mod block;
+pub mod env;
+pub mod indexer;
+pub mod ingestion;
+pub mod util;
 
 #[tokio::main]
 async fn main() -> Result<()> {

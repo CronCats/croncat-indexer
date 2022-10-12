@@ -3,10 +3,6 @@ name = "croncat-indexer"
 version = "0.1.0"
 edition = "2021"
 
-[lib]
-name = "croncat_indexer"
-path = "src/lib.rs"
-
 [dependencies]
 async-stream = "0.3.3"
 color-eyre = "0.6.2"
