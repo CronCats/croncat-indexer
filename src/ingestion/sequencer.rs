@@ -68,7 +68,7 @@ where
             queue.remove(&last_value);
 
             // If the cache is full, remove the oldest item
-            if &cache.len() >= &self.cache_size_max {
+            if cache.len() >= self.cache_size_max {
                 let x = cache.iter().next().unwrap().clone();
                 cache.remove(&x);
             }

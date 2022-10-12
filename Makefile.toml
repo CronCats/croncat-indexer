@@ -1,0 +1,41 @@
+[tasks.format]
+install_crate = "rustfmt"
+command = "cargo"
+args = ["fmt", "--all"]
+
+[tasks.clean]
+command = "cargo"
+args = ["clean"]
+
+[tasks.check]
+command = "cargo"
+args = ["check"]
+
+[tasks.clippy]
+command = "cargo"
+args = ["clippy", "--all-targets", "--all-features", "--", "-D", "warnings"]
+
+[tasks.build]
+command = "cargo"
+args = ["build"]
+
+[tasks.test]
+command = "cargo"
+args = ["test"]
+
+[tasks.migrate]
+install_crate = "sea-orm-cli"
+command = "sea-orm-cli"
+args = ["migrate", "refresh"]
+
+[tasks.generate-migration]
+install_crate = "sea-orm-cli"
+command = "sea-orm-cli"
+args = ["migrate", "generate", "--name", "${MIGRATION_NAME}"]
+
+[tasks.pre-commit]
+dependencies = [
+    "format",
+    "check",
+    "clippy",
+]

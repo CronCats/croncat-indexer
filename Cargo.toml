@@ -19,3 +19,6 @@ tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
 delegate = "0.8.0"
 sea-orm = { version = "0.9.3", features = ["runtime-tokio-native-tls", "sqlx-postgres"] }
 chrono = "0.4.22"
+
+[dev-dependencies]
+rusty-hook = "^0.11.2"
