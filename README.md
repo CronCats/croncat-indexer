@@ -22,9 +22,21 @@ See [here](./migration/README.md) for more info on migrations from `sea-orm`.
 
 -   `cargo make generate-migration <name>`
 
-### Migrate database
+### Migrate latest database changes
 
--   `cargo make migrate`
+-   `cargo make migrate-up`
+
+### Rollback latest database changes
+
+-   `cargo make migrate-down`
+
+### Refresh database schema
+
+-   `cargo make migrate-refresh`
+
+### Generate the model from the database
+
+-   `cargo make generate-model`
 
 ## Run
 
