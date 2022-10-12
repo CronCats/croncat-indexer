@@ -12,6 +12,10 @@
 
 Index the chain, get information about croncat contracts and tasks!
 
+## Run
+
+-   `cargo run`
+
 ## Top Level Database Helpers
 
 See [here](./migration/README.md) for more info on migrations from `sea-orm`.
@@ -37,7 +41,3 @@ See [here](./migration/README.md) for more info on migrations from `sea-orm`.
 ### Generate the model from the database
 
 -   `cargo make generate-model`
-
-## Run
-
--   `cargo run`
