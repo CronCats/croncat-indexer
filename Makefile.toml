@@ -43,6 +43,11 @@ install_crate = "sea-orm-cli"
 command = "sea-orm-cli"
 args = ["migrate", "generate", "--name", "${MIGRATION_NAME}"]
 
+[tasks.generate-model]
+install_crate = "sea-orm-cli"
+command = "sea-orm-cli"
+args = ["generate", "entity", "-o", "src/indexer/model"]
+
 [tasks.pre-commit]
 dependencies = [
     "format",

@@ -6,10 +6,12 @@ use sea_orm::entity::prelude::*;
 #[sea_orm(table_name = "block")]
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
-    pub height: i32,
-    pub chain_id: String,
+    pub height: i64,
     pub time: DateTime,
-    pub num_txs: i32,
+    pub chain_id: String,
+    #[sea_orm(unique)]
+    pub hash: String,
+    pub num_txs: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
