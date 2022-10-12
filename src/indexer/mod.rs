@@ -3,9 +3,9 @@ use color_eyre::{eyre::eyre, Result};
 use sea_orm::entity::prelude::*;
 use sea_orm::Set;
 
-#[allow(clippy::all)]
 pub use model::{prelude::*, *};
 
+#[allow(clippy::all)]
 mod model;
 
 pub async fn index_block(db: &DatabaseConnection, block: crate::block::Block) -> Result<()> {
