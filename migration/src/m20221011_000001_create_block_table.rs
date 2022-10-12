@@ -11,21 +11,16 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(Block::Table)
                     .if_not_exists()
-                    .col(
-                        ColumnDef::new(Block::Height)
-                            .big_unsigned()
-                            .not_null()
-                            .primary_key(),
-                    )
+                    .col(ColumnDef::new(Block::Height).big_unsigned().not_null())
                     .col(ColumnDef::new(Block::Time).timestamp().not_null())
                     .col(ColumnDef::new(Block::ChainId).string_len(32).not_null())
-                    .col(
-                        ColumnDef::new(Block::Hash)
-                            .string_len(64)
-                            .not_null()
-                            .unique_key(),
-                    )
+                    .col(ColumnDef::new(Block::Hash).string_len(64).not_null())
                     .col(ColumnDef::new(Block::NumTxs).big_unsigned().not_null())
+                    .primary_key(
+                        index::Index::create()
+                            .col(Block::Height)
+                            .col(Block::ChainId),
+                    )
                     .to_owned(),
             )
             .await
