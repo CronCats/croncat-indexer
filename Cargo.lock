@@ -356,6 +356,7 @@ dependencies = [
  "async-stream",
  "chrono",
  "color-eyre",
+ "croncat-pipeline",
  "delegate",
  "futures",
  "futures-retry",
@@ -371,6 +372,17 @@ dependencies = [
  "tokio-retry",
  "tracing",
  "tracing-subscriber 0.3.16",
+]
+
+[[package]]
+name = "croncat-pipeline"
+version = "0.1.0"
+source = "git+https://github.com/CronCats/croncat-pipeline#9ca8f36b28cf8bb4ca9c933c7d07c3b110132ee2"
+dependencies = [
+ "async-stream",
+ "color-eyre",
+ "futures",
+ "tokio",
 ]
 
 [[package]]

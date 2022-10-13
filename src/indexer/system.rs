@@ -1,11 +1,11 @@
 use crate::{indexer, try_flat_join};
 use color_eyre::{Report, Result};
+use croncat_pipeline::{Dispatcher, ProviderSystem, Sequencer};
 use sea_orm::Database;
 use tendermint_rpc::HttpClient;
 use tokio::sync::{broadcast, mpsc};
 use tracing::info;
 
-use crate::ingestion::{Dispatcher, ProviderSystem, Sequencer};
 use crate::streams::block::{poll_stream_blocks, ws_block_stream};
 
 pub async fn run() -> Result<()> {
