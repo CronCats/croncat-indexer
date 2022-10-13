@@ -128,7 +128,7 @@ pub async fn index_transactions_for_block(
         })?
         .txs;
 
-        if txs.len() == 0 {
+        if txs.is_empty() {
             return Err(eyre!(
                 "No transactions found for block with transactions {}",
                 block.height
