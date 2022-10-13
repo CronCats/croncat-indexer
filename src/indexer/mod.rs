@@ -58,7 +58,7 @@ impl TransactionModel {
         let height = transaction.height.value() as i64;
         let gas_wanted = transaction.tx_result.gas_wanted.to_string();
         let gas_used = transaction.tx_result.gas_used.to_string();
-        let log = serde_json::from_str(transaction.tx_result.log.to_string().as_str())?;
+        let log = serde_json::to_value(transaction.tx_result.log)?;
 
         Ok(Self {
             id: Set(Uuid::new_v4()),

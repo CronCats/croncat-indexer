@@ -5,7 +5,6 @@ use color_eyre::Result;
 pub mod env;
 pub mod indexer;
 pub mod streams;
-pub mod util;
 
 #[tokio::main]
 async fn main() -> Result<()> {

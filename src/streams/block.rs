@@ -88,7 +88,7 @@ pub fn ws_block_stream(ws_rpc_host: &'static str) -> BlockStream {
 
         let mut subscription = client.subscribe(EventType::NewBlock.into()).await.map_err(|source| BlockStreamError::Subscribe { source: source.into() })?;
 
-        let recv_timeout_duration = Duration::from_secs(600);
+        let recv_timeout_duration = Duration::from_secs(60);
         while let Some(event) =
             timeout(recv_timeout_duration, subscription.next())
             .await
