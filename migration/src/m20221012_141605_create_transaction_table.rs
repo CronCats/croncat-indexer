@@ -1,5 +1,7 @@
 use sea_orm_migration::prelude::*;
 
+use crate::m20221011_000001_create_block_table::Block;
+
 #[derive(DeriveMigrationName)]
 pub struct Migration;
 
@@ -17,15 +19,25 @@ impl MigrationTrait for Migration {
                             .not_null()
                             .primary_key(),
                     )
+                    .col(ColumnDef::new(Transaction::BlockId).uuid().not_null())
                     .col(
                         ColumnDef::new(Transaction::Height)
                             .big_unsigned()
                             .not_null(),
                     )
                     .col(ColumnDef::new(Transaction::Hash).string_len(64).not_null())
-                    .col(ColumnDef::new(Transaction::GasWanted).string().null())
-                    .col(ColumnDef::new(Transaction::GasUsed).string().null())
-                    .col(ColumnDef::new(Transaction::Log).json_binary().null())
+                    .col(ColumnDef::new(Transaction::Code).integer().not_null())
+                    .col(ColumnDef::new(Transaction::GasWanted).string().not_null())
+                    .col(ColumnDef::new(Transaction::GasUsed).string().not_null())
+                    .col(ColumnDef::new(Transaction::Log).json_binary().not_null())
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk-block_id")
+                            .from(Transaction::Table, Transaction::BlockId)
+                            .to(Block::Table, Block::Id)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
                     .to_owned(),
             )
             .await
@@ -43,8 +55,10 @@ impl MigrationTrait for Migration {
 enum Transaction {
     Table,
     Id,
+    BlockId,
     Height,
     Hash,
+    Code,
     GasWanted,
     GasUsed,
     Log,

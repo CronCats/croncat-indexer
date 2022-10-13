@@ -7,14 +7,31 @@ use sea_orm::entity::prelude::*;
 pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
+    pub block_id: Uuid,
     pub height: i64,
     pub hash: String,
-    pub gas_wanted: Option<String>,
-    pub gas_used: Option<String>,
-    pub log: Option<Json>,
+    pub code: i32,
+    pub gas_wanted: String,
+    pub gas_used: String,
+    pub log: Json,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
-pub enum Relation {}
+pub enum Relation {
+    #[sea_orm(
+        belongs_to = "super::block::Entity",
+        from = "Column::BlockId",
+        to = "super::block::Column::Id",
+        on_update = "Cascade",
+        on_delete = "Cascade"
+    )]
+    Block,
+}
+
+impl Related<super::block::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Block.def()
+    }
+}
 
 impl ActiveModelBehavior for ActiveModel {}

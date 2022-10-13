@@ -1,10 +1,19 @@
+use std::time::Duration;
+
 use color_eyre::{eyre::eyre, Result};
 use sea_orm::entity::prelude::*;
 use sea_orm::Set;
+use tendermint_rpc::endpoint::tx;
+use tendermint_rpc::query::Query;
+use tendermint_rpc::{Client, HttpClient, Order};
+use tokio::time::timeout;
+use tokio_retry::strategy::{jitter, FibonacciBackoff};
+use tokio_retry::Retry;
+use tracing::trace;
 
 // Sane aliases
+use self::model::block::Model as DatabaseBlock;
 use crate::streams::block::Block;
-use crate::streams::transaction::Transaction;
 use model::block::ActiveModel as BlockModel;
 use model::transaction::ActiveModel as TransactionModel;
 
@@ -42,15 +51,17 @@ impl From<Block> for BlockModel {
 ///
 /// Create a transaction database entry from a transaction.
 ///
-impl From<Transaction> for TransactionModel {
-    fn from(transaction: Transaction) -> Self {
+impl TransactionModel {
+    fn from_response(block_id: Uuid, transaction: tx::Response) -> Self {
         Self {
             id: Set(Uuid::new_v4()),
             hash: Set(transaction.hash.to_string()),
-            height: Set(transaction.height),
-            gas_wanted: Set(transaction.gas_wanted),
-            gas_used: Set(transaction.gas_used),
-            log: Set(transaction.log.map(|l| serde_json::from_str(&l).unwrap())),
+            block_id: Set(block_id),
+            code: Set(transaction.tx_result.code.value() as i32),
+            height: Set(transaction.height.into()),
+            gas_wanted: Set(transaction.tx_result.gas_wanted.to_string()),
+            gas_used: Set(transaction.tx_result.gas_used.to_string()),
+            log: Set(serde_json::from_str(transaction.tx_result.log.to_string().as_str()).unwrap()),
         }
     }
 }
@@ -58,23 +69,87 @@ impl From<Transaction> for TransactionModel {
 ///
 /// Index a block into the database.
 ///
-pub async fn index_block(db: &DatabaseConnection, block: Block) -> Result<()> {
-    BlockModel::from(block)
+pub async fn index_block(
+    db: &DatabaseConnection,
+    block: Block,
+    rpc_client: &HttpClient,
+) -> Result<()> {
+    let block = BlockModel::from(block)
         .insert(db)
         .await
         .map_err(|e| eyre!("Failed to insert block: {}", e))?;
+
+    if block.num_txs > 0 {
+        let retry_strategy = FibonacciBackoff::from_millis(50).map(jitter).take(10);
+
+        Retry::spawn(retry_strategy, || async {
+            index_transactions_for_block(db, &block, rpc_client).await
+        })
+        .await?;
+    }
 
     Ok(())
 }
 
 ///
-/// Index a transaction into the database.
+/// Get transactions from a block.
 ///
-pub async fn index_transaction(db: &DatabaseConnection, transaction: Transaction) -> Result<()> {
-    TransactionModel::from(transaction)
-        .insert(db)
-        .await
-        .map_err(|e| eyre!("Failed to insert transaction: {}", e))?;
+pub async fn index_transactions_for_block(
+    db: &DatabaseConnection,
+    block: &DatabaseBlock,
+    rpc_client: &HttpClient,
+) -> Result<()> {
+    trace!("Fetching transactions for block {}", block.height);
+
+    let poll_timeout_duration = Duration::from_secs(60);
+    let mut found_txs = 0;
+    let mut current_page = 0;
+
+    while found_txs < block.num_txs {
+        current_page += 1;
+
+        let txs = timeout(
+            poll_timeout_duration,
+            rpc_client.tx_search(
+                Query::eq("tx.height", block.height),
+                true,
+                current_page,
+                100,
+                Order::Ascending,
+            ),
+        )
+        .await?
+        .map_err(|e| {
+            eyre!(
+                "Failed to get transactions for height {}: {}",
+                block.height,
+                e
+            )
+        })?
+        .txs;
+
+        if txs.len() == 0 {
+            return Err(eyre!(
+                "No transactions found for block with transactions {}",
+                block.height
+            ));
+        }
+
+        for tx in txs.iter() {
+            let transaction = TransactionModel::from_response(block.id, tx.clone());
+            transaction
+                .insert(db)
+                .await
+                .map_err(|e| eyre!("Failed to insert transaction: {}", e))?;
+            found_txs += 1;
+        }
+    }
+
+    trace!(
+        "Successfully inserted {} transactions for height {}",
+        found_txs,
+        block.height
+    );
 
     Ok(())
 }
