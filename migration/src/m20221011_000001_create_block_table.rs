@@ -11,6 +11,7 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(Block::Table)
                     .if_not_exists()
+                    .col(ColumnDef::new(Block::Id).uuid().unique_key().not_null())
                     .col(ColumnDef::new(Block::Height).big_unsigned().not_null())
                     .col(ColumnDef::new(Block::Time).timestamp().not_null())
                     .col(ColumnDef::new(Block::ChainId).string_len(32).not_null())
@@ -35,8 +36,9 @@ impl MigrationTrait for Migration {
 
 /// Learn more at https://docs.rs/sea-query#iden
 #[derive(Iden)]
-enum Block {
+pub enum Block {
     Table,
+    Id,
     Height,
     Time,
     ChainId,

@@ -82,7 +82,10 @@ pub async fn flatten_join<T>(handle: JoinHandle<Result<T>>) -> Result<T> {
 #[macro_export]
 macro_rules! try_flat_join {
     ($($fut:expr),+ $(,)?) => {
-        tokio::try_join!($(flatten_join($fut)),+)
+        {
+            use $crate::util::flatten_join;
+            tokio::try_join!($(flatten_join($fut)),+)
+        }
     };
 }
 #[cfg(test)]

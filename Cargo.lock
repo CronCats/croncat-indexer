@@ -361,6 +361,8 @@ dependencies = [
  "futures-retry",
  "rusty-hook",
  "sea-orm",
+ "serde_json",
+ "sha2 0.10.6",
  "snafu",
  "structopt",
  "tendermint",

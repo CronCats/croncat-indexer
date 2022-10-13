@@ -3,17 +3,15 @@
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
-#[sea_orm(table_name = "block")]
+#[sea_orm(table_name = "transaction")]
 pub struct Model {
-    #[sea_orm(unique)]
+    #[sea_orm(primary_key, auto_increment = false)]
     pub id: Uuid,
-    #[sea_orm(primary_key, auto_increment = false)]
     pub height: i64,
-    pub time: DateTime,
-    #[sea_orm(primary_key, auto_increment = false)]
-    pub chain_id: String,
     pub hash: String,
-    pub num_txs: i64,
+    pub gas_wanted: Option<String>,
+    pub gas_used: Option<String>,
+    pub log: Option<Json>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

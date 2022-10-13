@@ -1,14 +1,14 @@
 use std::{pin::Pin, time::Duration};
 
 use async_stream::try_stream;
-use color_eyre::{eyre::eyre, Report, Result};
+use color_eyre::{Report, Result};
 use delegate::delegate;
-use futures::{pin_mut, StreamExt, TryStream, TryStreamExt};
+use futures::{StreamExt, TryStream};
 use snafu::Snafu;
 use tendermint_rpc::{
     event::EventData, query::EventType, Client, HttpClient, SubscriptionClient, WebSocketClient,
 };
-use tokio::{sync::broadcast, time::timeout};
+use tokio::time::timeout;
 use tracing::info;
 
 ///
@@ -88,7 +88,7 @@ pub fn ws_block_stream(ws_rpc_host: &'static str) -> BlockStream {
 
         let mut subscription = client.subscribe(EventType::NewBlock.into()).await.map_err(|source| BlockStreamError::Subscribe { source: source.into() })?;
 
-        let recv_timeout_duration = Duration::from_secs(30);
+        let recv_timeout_duration = Duration::from_secs(600);
         while let Some(event) =
             timeout(recv_timeout_duration, subscription.next())
             .await
@@ -102,6 +102,9 @@ pub fn ws_block_stream(ws_rpc_host: &'static str) -> BlockStream {
                     let block = block.ok_or_else(|| BlockStreamError::EventWithoutBlock)?;
                     info!("Received block {}", block.header().height);
                     yield block.into();
+                },
+                EventData::Tx { tx_result, ..} => {
+                    info!("Received tx {:#?}", tx_result);
                 },
                 _ => continue,
             }
@@ -119,6 +122,7 @@ pub fn ws_block_stream(ws_rpc_host: &'static str) -> BlockStream {
 pub fn poll_stream_blocks(http_rpc_host: &'static str, poll_duration_secs: u64) -> BlockStream {
     Box::pin(try_stream! {
         let client = HttpClient::new(http_rpc_host).map_err(|source| BlockStreamError::Connect { source: source.into() })?;
+
         let poll_timeout_duration = Duration::from_secs(30);
         loop {
             let block = timeout(poll_timeout_duration, client.latest_block()).await.map_err(|_| BlockStreamError::Timeout { timeout: poll_timeout_duration })?;
@@ -128,33 +132,4 @@ pub fn poll_stream_blocks(http_rpc_host: &'static str, poll_duration_secs: u64) 
             info!("Polled block {}", block.header().height);
         }
     })
-}
-
-///
-/// Consume a stream of blocks from a given rpc endpoint and print them.
-///
-#[allow(dead_code)]
-pub async fn stream_blocks(
-    block_stream: impl TryStream<Item = Result<Block>>,
-    incoming_blocks_tx: &broadcast::Sender<Block>,
-) -> Result<()> {
-    pin_mut!(block_stream);
-
-    while let Some(block) = block_stream
-        .try_next()
-        .await
-        .map_err(|err| eyre!("Block stream failed: {}", err))?
-    {
-        info!(
-            "Received block: {:?} {:?}",
-            block.header().height,
-            block.header().time
-        );
-
-        incoming_blocks_tx
-            .send(block)
-            .map_err(|err| eyre!("Failed to send block: {}", err))?;
-    }
-
-    Ok(())
 }

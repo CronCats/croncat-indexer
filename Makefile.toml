@@ -41,7 +41,7 @@ args = ["migrate", "refresh"]
 [tasks.generate-migration]
 install_crate = "sea-orm-cli"
 command = "sea-orm-cli"
-args = ["migrate", "generate", "--name", "${MIGRATION_NAME}"]
+args = ["migrate", "generate", "--", "${@}"]
 
 [tasks.generate-model]
 install_crate = "sea-orm-cli"
