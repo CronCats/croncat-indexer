@@ -53,17 +53,22 @@ impl From<Block> for BlockModel {
 ///
 impl TransactionModel {
     fn from_response(block_id: Uuid, transaction: tx::Response) -> Result<Self> {
+        let hash = transaction.hash.to_string();
+        let code = transaction.tx_result.code.value() as i32;
+        let height = transaction.height.value() as i64;
+        let gas_wanted = transaction.tx_result.gas_wanted.to_string();
+        let gas_used = transaction.tx_result.gas_used.to_string();
+        let log = serde_json::from_str(transaction.tx_result.log.to_string().as_str())?;
+
         Ok(Self {
             id: Set(Uuid::new_v4()),
-            hash: Set(transaction.hash.to_string()),
+            hash: Set(hash),
             block_id: Set(block_id),
-            code: Set(transaction.tx_result.code.value() as i32),
-            height: Set(transaction.height.into()),
-            gas_wanted: Set(transaction.tx_result.gas_wanted.to_string()),
-            gas_used: Set(transaction.tx_result.gas_used.to_string()),
-            log: Set(serde_json::from_str(
-                transaction.tx_result.log.to_string().as_str(),
-            )?),
+            code: Set(code),
+            height: Set(height),
+            gas_wanted: Set(gas_wanted),
+            gas_used: Set(gas_used),
+            log: Set(log),
         })
     }
 }
