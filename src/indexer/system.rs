@@ -39,8 +39,10 @@ pub async fn run() -> Result<()> {
     // Create an indexer to process the blocks.
     let indexer_handle = tokio::spawn(async move {
         let rpc_client = HttpClient::new("https://juno-testnet-rpc.polkachu.com")?;
-        let db = Database::connect("postgresql://postgres:postgres@localhost:5432/croncat_indexer")
-            .await?;
+        let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+            "postgresql://postgres:postgres@localhost:5432/croncat_indexer".to_string()
+        });
+        let db = Database::connect(database_url).await?;
 
         while let Ok(block) = dispatcher_rx.recv().await {
             info!(
