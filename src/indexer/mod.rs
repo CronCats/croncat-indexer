@@ -52,8 +52,8 @@ impl From<Block> for BlockModel {
 /// Create a transaction database entry from a transaction.
 ///
 impl TransactionModel {
-    fn from_response(block_id: Uuid, transaction: tx::Response) -> Self {
-        Self {
+    fn from_response(block_id: Uuid, transaction: tx::Response) -> Result<Self> {
+        Ok(Self {
             id: Set(Uuid::new_v4()),
             hash: Set(transaction.hash.to_string()),
             block_id: Set(block_id),
@@ -61,8 +61,10 @@ impl TransactionModel {
             height: Set(transaction.height.into()),
             gas_wanted: Set(transaction.tx_result.gas_wanted.to_string()),
             gas_used: Set(transaction.tx_result.gas_used.to_string()),
-            log: Set(serde_json::from_str(transaction.tx_result.log.to_string().as_str()).unwrap()),
-        }
+            log: Set(serde_json::from_str(
+                transaction.tx_result.log.to_string().as_str(),
+            )?),
+        })
     }
 }
 
@@ -136,7 +138,7 @@ pub async fn index_transactions_for_block(
         }
 
         for tx in txs.iter() {
-            let transaction = TransactionModel::from_response(block.id, tx.clone());
+            let transaction = TransactionModel::from_response(block.id, tx.clone())?;
             transaction
                 .insert(db)
                 .await
