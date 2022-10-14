@@ -92,18 +92,33 @@ pub async fn index_block(
     block: Block,
     rpc_client: &HttpClient,
 ) -> Result<()> {
-    let block = BlockModel::from(block)
-        .insert(db)
-        .await
-        .map_err(|e| eyre!("Failed to insert block: {}", e))?;
+    let block_insert_result = BlockModel::from(block).insert(db).await;
 
-    if block.num_txs > 0 {
-        let retry_strategy = FibonacciBackoff::from_millis(50).map(jitter).take(10);
+    match block_insert_result {
+        Ok(block) => {
+            if block.num_txs > 0 {
+                let retry_strategy = FibonacciBackoff::from_millis(50).map(jitter).take(10);
 
-        Retry::spawn(retry_strategy, || async {
-            index_transactions_for_block(db, &block, rpc_client).await
-        })
-        .await?;
+                Retry::spawn(retry_strategy, || async {
+                    index_transactions_for_block(db, &block, rpc_client).await
+                })
+                .await?;
+            }
+        }
+        Err(err) => {
+            match err {
+                // If the block already exists, we can safely ignore the error.
+                DbErr::Query(message) => {
+                    if message.contains("duplicate key value violates unique constraint") {
+                        trace!("Block already exists in database, skipping");
+                    } else {
+                        return Err(eyre!("Failed to insert block: {}", message));
+                    }
+                }
+                // Otherwise we should bubble up the error.
+                _ => return Err(err.into()),
+            }
+        }
     }
 
     Ok(())
