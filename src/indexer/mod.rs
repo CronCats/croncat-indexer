@@ -9,7 +9,7 @@ use tendermint_rpc::{Client, HttpClient, Order};
 use tokio::time::timeout;
 use tokio_retry::strategy::{jitter, FibonacciBackoff};
 use tokio_retry::Retry;
-use tracing::trace;
+use tracing::{error, trace};
 
 // Sane aliases
 use self::model::block::Model as DatabaseBlock;
@@ -58,7 +58,14 @@ impl TransactionModel {
         let height = transaction.height.value() as i64;
         let gas_wanted = transaction.tx_result.gas_wanted.to_string();
         let gas_used = transaction.tx_result.gas_used.to_string();
-        let log = serde_json::to_value(transaction.tx_result.log)?;
+        let raw_log = transaction.tx_result.log.to_string();
+        let log = serde_json::from_str(&raw_log).map_err(|err| {
+            error!("Malformed JSON: {:#?}", raw_log);
+            eyre!(
+                "Failed to parse transaction log as JSON: {}",
+                err.to_string()
+            )
+        })?;
 
         Ok(Self {
             id: Set(Uuid::new_v4()),
