@@ -9,7 +9,7 @@ use tendermint_rpc::{Client, HttpClient, Order};
 use tokio::time::timeout;
 use tokio_retry::strategy::{jitter, FibonacciBackoff};
 use tokio_retry::Retry;
-use tracing::{error, trace};
+use tracing::trace;
 
 // Sane aliases
 use self::model::block::Model as DatabaseBlock;
@@ -59,13 +59,16 @@ impl TransactionModel {
         let gas_wanted = transaction.tx_result.gas_wanted.to_string();
         let gas_used = transaction.tx_result.gas_used.to_string();
         let raw_log = transaction.tx_result.log.to_string();
-        let log = serde_json::from_str(&raw_log).map_err(|err| {
-            error!("Malformed JSON: {:#?}", raw_log);
+
+        let log = (code == 0).then_some(serde_json::from_str(&raw_log).map_err(|err| {
             eyre!(
-                "Failed to parse transaction log as JSON: {}",
-                err.to_string()
+                "Failed to serialize transaction log for height {} and hash {}: {}",
+                height,
+                hash,
+                err
             )
-        })?;
+        })?);
+        let error_message = (code != 0).then_some(transaction.tx_result.log.to_string());
 
         Ok(Self {
             id: Set(Uuid::new_v4()),
@@ -76,6 +79,7 @@ impl TransactionModel {
             gas_wanted: Set(gas_wanted),
             gas_used: Set(gas_used),
             log: Set(log),
+            error_message: Set(error_message),
         })
     }
 }
@@ -144,7 +148,7 @@ pub async fn index_transactions_for_block(
 
         if txs.is_empty() {
             return Err(eyre!(
-                "No transactions found for block with transactions {}",
+                "No transactions found from RPC for block with transactions {}",
                 block.height
             ));
         }

@@ -13,7 +13,9 @@ pub struct Model {
     pub code: i32,
     pub gas_wanted: String,
     pub gas_used: String,
-    pub log: Json,
+    pub log: Option<Json>,
+    #[sea_orm(column_type = "Text", nullable)]
+    pub error_message: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

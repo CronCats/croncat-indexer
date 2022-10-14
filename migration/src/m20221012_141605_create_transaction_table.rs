@@ -29,7 +29,8 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Transaction::Code).integer().not_null())
                     .col(ColumnDef::new(Transaction::GasWanted).string().not_null())
                     .col(ColumnDef::new(Transaction::GasUsed).string().not_null())
-                    .col(ColumnDef::new(Transaction::Log).json_binary().not_null())
+                    .col(ColumnDef::new(Transaction::Log).json_binary().null())
+                    .col(ColumnDef::new(Transaction::ErrorMessage).text().null())
                     .foreign_key(
                         ForeignKey::create()
                             .name("fk-block_id")
@@ -62,4 +63,5 @@ enum Transaction {
     GasWanted,
     GasUsed,
     Log,
+    ErrorMessage,
 }
