@@ -12,6 +12,12 @@
 
 Index the chain, get information about croncat contracts and tasks!
 
+## Configuration
+
+See [example.config.yaml](./example.config.yaml) for an initial setup!
+
+You can have multiple configurations that match the pattern "\*.config.yaml" in the pwd and they'll spawn their own indexer subsystem for each!
+
 ## Run
 
 -   `cargo run`
