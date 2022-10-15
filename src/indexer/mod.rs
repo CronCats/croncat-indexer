@@ -172,9 +172,11 @@ pub async fn index_transactions_for_block(
     let mut found_txs = 0;
     let mut current_page = 0;
 
+    // Handle pagination of transactions.
     while found_txs < block.num_txs {
         current_page += 1;
 
+        // Get transactions for block from RPC.
         let txs = timeout(
             poll_timeout_duration,
             rpc_client.tx_search(
@@ -210,6 +212,7 @@ pub async fn index_transactions_for_block(
             })
             .collect::<Vec<_>>();
 
+        // Error if we didn't find any transactions, when we should have.
         if txs.is_empty() {
             return Err(eyre!(
                 "No transactions found from RPC for block with transactions {}",
@@ -217,6 +220,7 @@ pub async fn index_transactions_for_block(
             ));
         }
 
+        // Insert transactions into the database.
         for tx in txs.iter() {
             let transaction = TransactionModel::from_response(block.id, tx.clone())?;
             transaction

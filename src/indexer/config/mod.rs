@@ -90,8 +90,13 @@ impl TryFrom<PathBuf> for Config {
 /// Configuration for the indexer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Config {
+    /// The sources to index.
+    pub name: String,
+    /// The chain id of the chain to index.
+    pub chain_id: String,
     /// The sources to index from.
     pub sources: Vec<Source>,
+    /// The filters to apply to the sources.
     pub filters: Vec<Filter>,
 }
 
@@ -179,6 +184,8 @@ mod tests {
     #[test]
     fn config_serialize() {
         let config = Config {
+            name: "test".to_string(),
+            chain_id: "uni-5".to_string(),
             sources: vec![Source::new(
                 "Block Stream",
                 SourceType::Websocket,
@@ -199,6 +206,7 @@ mod tests {
         assert_eq!(
             yaml.trim(),
             indoc! {r#"
+                name: test
                 sources:
                 - name: block-stream
                   type: websocket
@@ -216,6 +224,7 @@ mod tests {
     #[test]
     fn config_deserialize() {
         let yaml = indoc! {r#"
+            name: test
             sources:
             - name: block-stream
               type: websocket
@@ -232,6 +241,8 @@ mod tests {
         assert_eq!(
             config,
             Config {
+                name: "test".to_string(),
+                chain_id: "uni-5".to_string(),
                 sources: vec![Source::new(
                     "Block Stream",
                     SourceType::Websocket,

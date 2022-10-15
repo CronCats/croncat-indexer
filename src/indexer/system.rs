@@ -1,11 +1,13 @@
 use color_eyre::{Report, Result};
 use croncat_pipeline::{try_flat_join, Dispatcher, ProviderSystem, Sequencer};
+use futures::stream::FuturesUnordered;
+use futures::StreamExt;
 use sea_orm::Database;
 use tendermint_rpc::HttpClient;
 use tokio::sync::{broadcast, mpsc};
 use tokio_retry::strategy::{jitter, FibonacciBackoff};
 use tokio_retry::Retry;
-use tracing::{info, trace};
+use tracing::{error, info, trace, warn};
 
 use super::config::Config;
 use crate::indexer;
@@ -27,7 +29,7 @@ pub async fn run(config: Config) -> Result<()> {
             indexer::config::SourceType::Polling => {
                 last_polling_url = Some(source.url.clone());
                 provider_system
-                    .add_provider_stream(name, poll_stream_blocks(source.url.to_string(), 2));
+                    .add_provider_stream(name, poll_stream_blocks(source.url.to_string(), 3));
             }
         }
     }
@@ -52,22 +54,38 @@ pub async fn run(config: Config) -> Result<()> {
             "postgresql://postgres:postgres@localhost:5432/croncat_indexer".to_string()
         });
         let db = Database::connect(database_url).await?;
+        let name = config.name.clone();
+        let chain_id = config.chain_id.clone();
+        let filters = config.filters.clone();
 
         while let Ok(block) = dispatcher_rx.recv().await {
+            let expected_chain_id = &chain_id;
+            let chain_id = block.header().chain_id.to_string();
+            if chain_id != *expected_chain_id {
+                warn!(
+                    "Chain ID mismatch, expected {} but found {}",
+                    expected_chain_id, chain_id
+                );
+                warn!("No further processing will be done for this block");
+                continue;
+            }
+
             info!(
-                "Indexing block {} from {}",
+                "[{}] Indexing block {} ({}) from {}",
+                name,
                 block.header().height,
+                block.header().chain_id,
                 block.header().time
             );
             let retry_strategy = FibonacciBackoff::from_millis(100).map(jitter).take(10);
-
-            let filters = config.filters.clone();
             Retry::spawn(retry_strategy, || async {
                 let result = indexer::index_block(&db, &rpc_client, &filters, block.clone()).await;
                 if result.is_err() {
                     trace!(
-                        "Indexing {} from {} failed, retrying...",
+                        "[{}] Indexing {} ({}) from {} failed, retrying...",
+                        name,
                         block.header().height,
+                        block.header().chain_id,
                         block.header().time
                     );
                 }
@@ -85,6 +103,30 @@ pub async fn run(config: Config) -> Result<()> {
         dispatcher_handle,
         indexer_handle,
     )?;
+
+    Ok(())
+}
+
+pub async fn run_all() -> Result<()> {
+    let mut indexer_handles = FuturesUnordered::new();
+
+    let configs = Config::get_configs_from_pwd()?;
+
+    if configs.is_empty() {
+        error!("No configs found in {}", std::env::current_dir()?.display());
+        std::process::exit(1);
+    }
+
+    for (path, config) in Config::get_configs_from_pwd()? {
+        info!("Starting indexer for {}: {}", config.name, path.display());
+        trace!("Configuration details: {:#?}", config);
+        let indexer_handle = indexer::system::run(config);
+        indexer_handles.push(indexer_handle);
+    }
+
+    while let Some(indexer_handle) = indexer_handles.next().await {
+        indexer_handle?;
+    }
 
     Ok(())
 }

@@ -1,3 +1,6 @@
+name: testnet
+chain-id: uni-5
+
 sources:
   - name: polkachu
     type: websocket
