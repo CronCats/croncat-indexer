@@ -201,10 +201,10 @@ pub async fn index_transactions_for_block(
         let txs = txs
             .into_iter()
             .filter(|tx| {
-                let mut matches = false;
+                let mut matches = true;
                 for filter in filters {
-                    if *filter == tx.tx_result.events {
-                        matches = true;
+                    if *filter != tx.tx_result.events {
+                        matches = false;
                         break;
                     }
                 }
