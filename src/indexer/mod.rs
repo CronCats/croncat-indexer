@@ -19,6 +19,7 @@ use model::block::ActiveModel as BlockModel;
 use model::transaction::ActiveModel as TransactionModel;
 
 // Tell clippy to ignore the generated model code.
+mod config;
 #[allow(clippy::all)]
 pub mod model;
 pub mod system;

@@ -1,0 +1,13 @@
+sources:
+  - name: polkachu
+    type: websocket
+    url: wss://juno-testnet-rpc.polkachu.com/websocket
+  - name: polkachu
+    type: polling
+    url: https://juno-testnet-rpc.polkachu.com
+
+filters:
+  - type: message
+    attributes:
+      - key: action
+        value: MsgExecuteContract
