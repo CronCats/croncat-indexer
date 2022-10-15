@@ -16,7 +16,7 @@ Index the chain, get information about croncat contracts and tasks!
 
 See [example.config.yaml](./example.config.yaml) for an initial setup!
 
-You can have multiple configurations that match the pattern "\*.config.yaml" in the pwd and they'll spawn their own indexer subsystem for each!
+You can have multiple configurations that match the pattern "\*.config.yaml" in the pwd and each will spawn their own indexer!
 
 ## Run
 
