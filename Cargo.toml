@@ -29,6 +29,7 @@ url = { version = "2.3.1", features = ["serde"] }
 convert_case = "0.6.0"
 regex = "1.6.0"
 serde_yaml = "0.9.13"
+glob = "0.3.0"
 
 [dev-dependencies]
 indoc = "1.0.7"

@@ -7,23 +7,30 @@ use tokio_retry::strategy::{jitter, FibonacciBackoff};
 use tokio_retry::Retry;
 use tracing::{info, trace};
 
+use super::config::Config;
 use crate::indexer;
 use crate::streams::block::{poll_stream_blocks, ws_block_stream};
 
-pub async fn run() -> Result<()> {
+pub async fn run(config: Config) -> Result<()> {
     let (provider_system_tx, provider_system_rx) = mpsc::unbounded_channel();
     let mut provider_system = ProviderSystem::new(provider_system_tx);
 
-    // Websocket provider.
-    provider_system.add_provider_stream(
-        "polkachu-ws",
-        ws_block_stream("wss://juno-testnet-rpc.polkachu.com/websocket"),
-    );
-    // Polling provider.
-    provider_system.add_provider_stream(
-        "polkachu-http",
-        poll_stream_blocks("https://juno-testnet-rpc.polkachu.com", 3),
-    );
+    let mut last_polling_url = None;
+
+    for source in config.sources {
+        let name = source.to_string();
+
+        match source.source_type {
+            indexer::config::SourceType::Websocket => {
+                provider_system.add_provider_stream(name, ws_block_stream(source.url.to_string()));
+            }
+            indexer::config::SourceType::Polling => {
+                last_polling_url = Some(source.url.clone());
+                provider_system
+                    .add_provider_stream(name, poll_stream_blocks(source.url.to_string(), 2));
+            }
+        }
+    }
 
     // Run the provider system.
     let provider_system_handle = tokio::spawn(async move { provider_system.produce().await });
@@ -40,7 +47,7 @@ pub async fn run() -> Result<()> {
 
     // Create an indexer to process the blocks.
     let indexer_handle = tokio::spawn(async move {
-        let rpc_client = HttpClient::new("https://juno-testnet-rpc.polkachu.com")?;
+        let rpc_client = HttpClient::new(last_polling_url.unwrap().to_string().as_str())?;
         let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
             "postgresql://postgres:postgres@localhost:5432/croncat_indexer".to_string()
         });

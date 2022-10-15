@@ -4,7 +4,7 @@ use std::{
     path::PathBuf,
 };
 
-use color_eyre::{Report, Result};
+use color_eyre::{eyre::eyre, Report, Result};
 use convert_case::{Case, Casing};
 use enum_display::EnumDisplay;
 use filter::Filter;
@@ -93,6 +93,20 @@ pub struct Config {
     /// The sources to index from.
     pub sources: Vec<Source>,
     pub filters: Vec<Filter>,
+}
+
+impl Config {
+    pub fn get_configs_from_pwd() -> Result<Vec<(PathBuf, Self)>> {
+        glob::glob("./*.config.yaml")
+            .unwrap()
+            .map(|path| {
+                let path = path?;
+                let config = Self::try_from(path.clone())
+                    .map_err(|err| eyre!("Invalid configuration {}: {}", path.display(), err))?;
+                Ok((path, config))
+            })
+            .collect()
+    }
 }
 
 #[cfg(test)]
