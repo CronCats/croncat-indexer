@@ -3,7 +3,9 @@ use croncat_pipeline::{try_flat_join, Dispatcher, ProviderSystem, Sequencer};
 use sea_orm::Database;
 use tendermint_rpc::HttpClient;
 use tokio::sync::{broadcast, mpsc};
-use tracing::info;
+use tokio_retry::strategy::{jitter, FibonacciBackoff};
+use tokio_retry::Retry;
+use tracing::{info, trace};
 
 use crate::indexer;
 use crate::streams::block::{poll_stream_blocks, ws_block_stream};
@@ -50,7 +52,20 @@ pub async fn run() -> Result<()> {
                 block.header().height,
                 block.header().time
             );
-            indexer::index_block(&db, block, &rpc_client).await?
+            let retry_strategy = FibonacciBackoff::from_millis(100).map(jitter).take(10);
+
+            Retry::spawn(retry_strategy, || async {
+                let result = indexer::index_block(&db, &rpc_client, block.clone()).await;
+                if result.is_err() {
+                    trace!(
+                        "Indexing {} from {} failed, retrying...",
+                        block.header().height,
+                        block.header().time
+                    );
+                }
+                result
+            })
+            .await?;
         }
 
         Ok::<(), Report>(())

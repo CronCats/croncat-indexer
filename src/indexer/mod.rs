@@ -3,6 +3,7 @@ use std::time::Duration;
 use color_eyre::{eyre::eyre, Result};
 use sea_orm::entity::prelude::*;
 use sea_orm::Set;
+use tendermint::abci;
 use tendermint_rpc::endpoint::tx;
 use tendermint_rpc::query::Query;
 use tendermint_rpc::{Client, HttpClient, Order};
@@ -58,17 +59,9 @@ impl TransactionModel {
         let height = transaction.height.value() as i64;
         let gas_wanted = transaction.tx_result.gas_wanted.to_string();
         let gas_used = transaction.tx_result.gas_used.to_string();
-        let raw_log = transaction.tx_result.log.to_string();
-
-        let log = (code == 0).then_some(serde_json::from_str(&raw_log).map_err(|err| {
-            eyre!(
-                "Failed to serialize transaction log for height {} and hash {}: {}",
-                height,
-                hash,
-                err
-            )
-        })?);
-        let error_message = (code != 0).then_some(transaction.tx_result.log.to_string());
+        let events = Self::decode_events(transaction.tx_result.events)?;
+        let log = transaction.tx_result.log.to_string();
+        let info = transaction.tx_result.info.to_string();
 
         Ok(Self {
             id: Set(Uuid::new_v4()),
@@ -78,9 +71,43 @@ impl TransactionModel {
             height: Set(height),
             gas_wanted: Set(gas_wanted),
             gas_used: Set(gas_used),
+            events: Set(events),
             log: Set(log),
-            error_message: Set(error_message),
+            info: Set(info),
         })
+    }
+
+    fn decode_events(events: Vec<abci::Event>) -> Result<serde_json::Value> {
+        let mut decoded_events = Vec::new();
+        for event in events {
+            let decoded_attributes: Vec<serde_json::Value> = event
+                .attributes
+                .iter()
+                .map(|attribute| {
+                    let mut map = serde_json::Map::new();
+                    map.insert(
+                        "key".to_string(),
+                        serde_json::Value::String(attribute.key.to_string()),
+                    );
+                    map.insert(
+                        "value".to_string(),
+                        serde_json::Value::String(attribute.value.to_string()),
+                    );
+                    serde_json::Value::Object(map)
+                })
+                .collect();
+            let mut map = serde_json::Map::new();
+            map.insert(
+                "type".to_string(),
+                serde_json::Value::String(event.type_str),
+            );
+            map.insert(
+                "attributes".to_string(),
+                serde_json::Value::Array(decoded_attributes),
+            );
+            decoded_events.push(serde_json::Value::Object(map));
+        }
+        Ok(serde_json::Value::Array(decoded_events))
     }
 }
 
@@ -89,18 +116,20 @@ impl TransactionModel {
 ///
 pub async fn index_block(
     db: &DatabaseConnection,
-    block: Block,
     rpc_client: &HttpClient,
+    block: Block,
 ) -> Result<()> {
     let block_insert_result = BlockModel::from(block).insert(db).await;
 
     match block_insert_result {
         Ok(block) => {
+            // If we have transactions to index, do so.
             if block.num_txs > 0 {
-                let retry_strategy = FibonacciBackoff::from_millis(50).map(jitter).take(10);
+                let retry_strategy = FibonacciBackoff::from_millis(100).map(jitter).take(10);
 
+                // Retry the transaction query up to 10 times.
                 Retry::spawn(retry_strategy, || async {
-                    index_transactions_for_block(db, &block, rpc_client).await
+                    index_transactions_for_block(db, rpc_client, &block).await
                 })
                 .await?;
             }
@@ -129,8 +158,8 @@ pub async fn index_block(
 ///
 pub async fn index_transactions_for_block(
     db: &DatabaseConnection,
-    block: &DatabaseBlock,
     rpc_client: &HttpClient,
+    block: &DatabaseBlock,
 ) -> Result<()> {
     trace!("Fetching transactions for block {}", block.height);
 
