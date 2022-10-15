@@ -12,7 +12,9 @@ use tokio_retry::strategy::{jitter, FibonacciBackoff};
 use tokio_retry::Retry;
 use tracing::trace;
 
-// Sane aliases
+use self::config::filter::Filter;
+
+// Sane model aliases
 use self::model::block::Model as DatabaseBlock;
 use crate::streams::block::Block;
 use model::block::ActiveModel as BlockModel;
@@ -118,6 +120,7 @@ impl TransactionModel {
 pub async fn index_block(
     db: &DatabaseConnection,
     rpc_client: &HttpClient,
+    filters: &Vec<Filter>,
     block: Block,
 ) -> Result<()> {
     let block_insert_result = BlockModel::from(block).insert(db).await;
@@ -130,7 +133,7 @@ pub async fn index_block(
 
                 // Retry the transaction query up to 10 times.
                 Retry::spawn(retry_strategy, || async {
-                    index_transactions_for_block(db, rpc_client, &block).await
+                    index_transactions_for_block(db, rpc_client, filters, &block).await
                 })
                 .await?;
             }
@@ -160,6 +163,7 @@ pub async fn index_block(
 pub async fn index_transactions_for_block(
     db: &DatabaseConnection,
     rpc_client: &HttpClient,
+    filters: &Vec<Filter>,
     block: &DatabaseBlock,
 ) -> Result<()> {
     trace!("Fetching transactions for block {}", block.height);
@@ -190,6 +194,21 @@ pub async fn index_transactions_for_block(
             )
         })?
         .txs;
+
+        // Filter transactions based on the provided filters.
+        let txs = txs
+            .into_iter()
+            .filter(|tx| {
+                let mut matches = false;
+                for filter in filters {
+                    if *filter == tx.tx_result.events {
+                        matches = true;
+                        break;
+                    }
+                }
+                matches
+            })
+            .collect::<Vec<_>>();
 
         if txs.is_empty() {
             return Err(eyre!(

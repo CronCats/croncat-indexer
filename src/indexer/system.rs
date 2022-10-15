@@ -61,8 +61,9 @@ pub async fn run(config: Config) -> Result<()> {
             );
             let retry_strategy = FibonacciBackoff::from_millis(100).map(jitter).take(10);
 
+            let filters = config.filters.clone();
             Retry::spawn(retry_strategy, || async {
-                let result = indexer::index_block(&db, &rpc_client, block.clone()).await;
+                let result = indexer::index_block(&db, &rpc_client, &filters, block.clone()).await;
                 if result.is_err() {
                     trace!(
                         "Indexing {} from {} failed, retrying...",
