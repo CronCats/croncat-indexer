@@ -93,6 +93,7 @@ pub struct Config {
     /// The sources to index.
     pub name: String,
     /// The chain id of the chain to index.
+    #[serde(alias = "chain-id")]
     pub chain_id: String,
     /// The sources to index from.
     pub sources: Vec<Source>,

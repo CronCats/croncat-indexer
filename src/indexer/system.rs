@@ -1,4 +1,4 @@
-use color_eyre::{Report, Result};
+use color_eyre::{eyre::eyre, Report, Result};
 use croncat_pipeline::{try_flat_join, Dispatcher, ProviderSystem, Sequencer};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
@@ -94,7 +94,17 @@ pub async fn run(config: Config) -> Result<()> {
                 }
                 result
             })
-            .await?;
+            .await
+            .map_err(|err| {
+                eyre!(
+                    "[{}] Failed to index block {} ({}) from {}: {}",
+                    name,
+                    block.header().height,
+                    block.header().chain_id,
+                    block.header().time,
+                    err
+                )
+            })?;
         }
 
         Ok::<(), Report>(())
@@ -111,15 +121,17 @@ pub async fn run(config: Config) -> Result<()> {
 }
 
 pub async fn run_all() -> Result<()> {
-    let mut indexer_handles = FuturesUnordered::new();
-
+    // Load the configurations from the pwd.
     let configs = Config::get_configs_from_pwd()?;
 
+    // If we have no configs then we should just exit.
     if configs.is_empty() {
         error!("No configs found in {}", std::env::current_dir()?.display());
         std::process::exit(1);
     }
 
+    // Otherwise we should run all the indexers based on each config.
+    let mut indexer_handles = FuturesUnordered::new();
     for (path, config) in Config::get_configs_from_pwd()? {
         info!("Starting indexer for {}: {}", config.name, path.display());
         trace!("Configuration details: {:#?}", config);
@@ -127,6 +139,7 @@ pub async fn run_all() -> Result<()> {
         indexer_handles.push(indexer_handle);
     }
 
+    // Wait for all the indexers to finish.
     while let Some(indexer_handle) = indexer_handles.next().await {
         indexer_handle?;
     }
