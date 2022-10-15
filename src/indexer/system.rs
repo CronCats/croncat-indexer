@@ -14,11 +14,14 @@ use crate::indexer;
 use crate::streams::block::{poll_stream_blocks, ws_block_stream};
 
 pub async fn run(config: Config) -> Result<()> {
+    // Setup system channels.
     let (provider_system_tx, provider_system_rx) = mpsc::unbounded_channel();
     let mut provider_system = ProviderSystem::new(provider_system_tx);
 
+    // Use this to query RPC for transactions.
     let mut last_polling_url = None;
 
+    // Load sources from the configuration.
     for source in config.sources {
         let name = source.to_string();
 
