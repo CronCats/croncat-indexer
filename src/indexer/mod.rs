@@ -12,13 +12,16 @@ use tokio_retry::strategy::{jitter, FibonacciBackoff};
 use tokio_retry::Retry;
 use tracing::trace;
 
-// Sane aliases
+use self::config::filter::Filter;
+
+// Sane model aliases
 use self::model::block::Model as DatabaseBlock;
 use crate::streams::block::Block;
 use model::block::ActiveModel as BlockModel;
 use model::transaction::ActiveModel as TransactionModel;
 
 // Tell clippy to ignore the generated model code.
+pub mod config;
 #[allow(clippy::all)]
 pub mod model;
 pub mod system;
@@ -117,6 +120,7 @@ impl TransactionModel {
 pub async fn index_block(
     db: &DatabaseConnection,
     rpc_client: &HttpClient,
+    filters: &Vec<Filter>,
     block: Block,
 ) -> Result<()> {
     let block_insert_result = BlockModel::from(block).insert(db).await;
@@ -129,7 +133,7 @@ pub async fn index_block(
 
                 // Retry the transaction query up to 10 times.
                 Retry::spawn(retry_strategy, || async {
-                    index_transactions_for_block(db, rpc_client, &block).await
+                    index_transactions_for_block(db, rpc_client, filters, &block).await
                 })
                 .await?;
             }
@@ -159,6 +163,7 @@ pub async fn index_block(
 pub async fn index_transactions_for_block(
     db: &DatabaseConnection,
     rpc_client: &HttpClient,
+    filters: &Vec<Filter>,
     block: &DatabaseBlock,
 ) -> Result<()> {
     trace!("Fetching transactions for block {}", block.height);
@@ -167,9 +172,11 @@ pub async fn index_transactions_for_block(
     let mut found_txs = 0;
     let mut current_page = 0;
 
+    // Handle pagination of transactions.
     while found_txs < block.num_txs {
         current_page += 1;
 
+        // Get transactions for block from RPC.
         let txs = timeout(
             poll_timeout_duration,
             rpc_client.tx_search(
@@ -190,6 +197,22 @@ pub async fn index_transactions_for_block(
         })?
         .txs;
 
+        // Filter transactions based on the provided filters.
+        let txs = txs
+            .into_iter()
+            .filter(|tx| {
+                let mut matches = false;
+                for filter in filters {
+                    if *filter == tx.tx_result.events {
+                        matches = true;
+                        break;
+                    }
+                }
+                matches
+            })
+            .collect::<Vec<_>>();
+
+        // Error if we didn't find any transactions, when we should have.
         if txs.is_empty() {
             return Err(eyre!(
                 "No transactions found from RPC for block with transactions {}",
@@ -197,6 +220,7 @@ pub async fn index_transactions_for_block(
             ));
         }
 
+        // Insert transactions into the database.
         for tx in txs.iter() {
             let transaction = TransactionModel::from_response(block.id, tx.clone())?;
             transaction

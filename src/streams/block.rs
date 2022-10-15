@@ -9,7 +9,7 @@ use tendermint_rpc::{
     event::EventData, query::EventType, Client, HttpClient, SubscriptionClient, WebSocketClient,
 };
 use tokio::time::timeout;
-use tracing::info;
+use tracing::trace;
 
 ///
 /// Block stream errors.
@@ -79,9 +79,9 @@ type BlockStream = Pin<Box<dyn TryStream<Item = Result<Block>, Ok = Block, Error
 ///
 /// Stream blocks from the given rpc endpoint.
 ///
-pub fn ws_block_stream(ws_rpc_host: &'static str) -> BlockStream {
+pub fn ws_block_stream(ws_rpc_host: String) -> BlockStream {
     Box::pin(try_stream! {
-        let (client, driver) = WebSocketClient::new(ws_rpc_host).await.map_err(|source| BlockStreamError::Connect { source: source.into() })?;
+        let (client, driver) = WebSocketClient::new(ws_rpc_host.as_str()).await.map_err(|source| BlockStreamError::Connect { source: source.into() })?;
         let driver_handle = tokio::spawn(async move {
             driver.run().await
         });
@@ -100,11 +100,8 @@ pub fn ws_block_stream(ws_rpc_host: &'static str) -> BlockStream {
             match data {
                 EventData::NewBlock { block, .. } => {
                     let block = block.ok_or_else(|| BlockStreamError::EventWithoutBlock)?;
-                    info!("Received block {}", block.header().height);
+                    trace!("Received block {}", block.header().height);
                     yield block.into();
-                },
-                EventData::Tx { tx_result, ..} => {
-                    info!("Received tx {:#?}", tx_result);
                 },
                 _ => continue,
             }
@@ -119,9 +116,9 @@ pub fn ws_block_stream(ws_rpc_host: &'static str) -> BlockStream {
 /// Stream polled blocks from the given rpc endpoint.
 ///
 
-pub fn poll_stream_blocks(http_rpc_host: &'static str, poll_duration_secs: u64) -> BlockStream {
+pub fn poll_stream_blocks(http_rpc_host: String, poll_duration_secs: u64) -> BlockStream {
     Box::pin(try_stream! {
-        let client = HttpClient::new(http_rpc_host).map_err(|source| BlockStreamError::Connect { source: source.into() })?;
+        let client = HttpClient::new(http_rpc_host.as_str()).map_err(|source| BlockStreamError::Connect { source: source.into() })?;
 
         let poll_timeout_duration = Duration::from_secs(30);
         loop {
@@ -129,7 +126,7 @@ pub fn poll_stream_blocks(http_rpc_host: &'static str, poll_duration_secs: u64) 
             let block = block.map_err(|source| BlockStreamError::TendermintError { source })?.block;
             yield block.clone().into();
             tokio::time::sleep(Duration::from_secs(poll_duration_secs)).await;
-            info!("Polled block {}", block.header().height);
+            trace!("Polled block {}", block.header().height);
         }
     })
 }

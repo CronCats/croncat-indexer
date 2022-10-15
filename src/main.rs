@@ -9,5 +9,5 @@ pub mod streams;
 #[tokio::main]
 async fn main() -> Result<()> {
     env::setup()?;
-    indexer::system::run().await
+    indexer::system::run_all().await
 }
