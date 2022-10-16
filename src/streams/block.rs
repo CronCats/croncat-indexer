@@ -100,7 +100,7 @@ pub fn ws_block_stream(ws_rpc_host: String) -> BlockStream {
             match data {
                 EventData::NewBlock { block, .. } => {
                     let block = block.ok_or_else(|| BlockStreamError::EventWithoutBlock)?;
-                    trace!("Received block {}", block.header().height);
+                    trace!("Received block {} ({})", block.header().height, block.header().chain_id);
                     yield block.into();
                 },
                 _ => continue,
@@ -126,7 +126,7 @@ pub fn poll_stream_blocks(http_rpc_host: String, poll_duration_secs: u64) -> Blo
             let block = block.map_err(|source| BlockStreamError::TendermintError { source })?.block;
             yield block.clone().into();
             tokio::time::sleep(Duration::from_secs(poll_duration_secs)).await;
-            trace!("Polled block {}", block.header().height);
+            trace!("Polled block {} ({})", block.header().height, block.header().chain_id);
         }
     })
 }

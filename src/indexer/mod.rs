@@ -129,7 +129,7 @@ pub async fn index_block(
         Ok(block) => {
             // If we have transactions to index, do so.
             if block.num_txs > 0 {
-                let retry_strategy = FibonacciBackoff::from_millis(100).map(jitter).take(10);
+                let retry_strategy = FibonacciBackoff::from_millis(50).map(jitter).take(15);
 
                 // Retry the transaction query up to 10 times.
                 Retry::spawn(retry_strategy, || async {
