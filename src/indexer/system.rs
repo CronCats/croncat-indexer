@@ -2,7 +2,7 @@ use color_eyre::{eyre::eyre, Report, Result};
 use croncat_pipeline::{try_flat_join, Dispatcher, ProviderSystem, Sequencer};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
-use sea_orm::Database;
+use sea_orm::{Database, DatabaseConnection};
 use tendermint_rpc::HttpClient;
 use tokio::sync::{broadcast, mpsc};
 use tokio_retry::strategy::{jitter, FibonacciBackoff, FixedInterval};
@@ -14,7 +14,15 @@ use super::config::{Config, Source};
 use crate::indexer;
 use crate::streams::block::{poll_stream_blocks, ws_block_stream};
 
-pub async fn run(name: &str, chain_id: &str, sources: &[Source], filters: &[Filter]) -> Result<()> {
+///
+/// Run a configured indexer.
+///
+pub async fn run(
+    name: &str,
+    chain_id: &str,
+    sources: &[Source],
+    filters: &Vec<Filter>,
+) -> Result<()> {
     // Setup system channels.
     let (provider_system_tx, provider_system_rx) = mpsc::unbounded_channel();
     let mut provider_system = ProviderSystem::new(provider_system_tx);
@@ -51,24 +59,22 @@ pub async fn run(name: &str, chain_id: &str, sources: &[Source], filters: &[Filt
     let mut dispatcher = Dispatcher::new(sequencer_rx, dispatcher_tx.clone());
     let dispatcher_handle = tokio::spawn(async move { dispatcher.fanout().await });
 
-    let name = name.to_owned();
-    let chain_id = chain_id.to_owned();
-    let filters = filters.to_owned();
     // Create an indexer to process the blocks.
+    let indexer_name = name.to_owned();
+    let indexer_chain_id = chain_id.to_owned();
+    let indexer_filters = filters.to_owned();
     let indexer_handle = tokio::spawn(async move {
         let rpc_client = HttpClient::new(last_polling_url.unwrap().to_string().as_str())?;
-        let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-            "postgresql://postgres:postgres@localhost:5432/croncat_indexer".to_string()
-        });
-        let db = Database::connect(database_url).await?;
+        let db = get_database_connection().await?;
 
+        // While there are still blocks to process.
         while let Ok(block) = dispatcher_rx.recv().await {
-            let expected_chain_id = &chain_id;
-            let chain_id = block.header().chain_id.to_string();
-            if chain_id != *expected_chain_id {
+            let expected_chain_id = &indexer_chain_id;
+            let indexer_chain_id = block.header().chain_id.to_string();
+            if indexer_chain_id != *expected_chain_id {
                 warn!(
                     "Chain ID mismatch, expected {} but found {}",
-                    expected_chain_id, chain_id
+                    expected_chain_id, indexer_chain_id
                 );
                 warn!("No further processing will be done for this block");
                 continue;
@@ -76,18 +82,19 @@ pub async fn run(name: &str, chain_id: &str, sources: &[Source], filters: &[Filt
 
             info!(
                 "[{}] Indexing block {} ({}) from {}",
-                name,
+                indexer_name,
                 block.header().height,
                 block.header().chain_id,
                 block.header().time
             );
             let retry_strategy = FibonacciBackoff::from_millis(100).map(jitter).take(10);
             Retry::spawn(retry_strategy, || async {
-                let result = indexer::index_block(&db, &rpc_client, &filters, block.clone()).await;
+                let result =
+                    indexer::index_block(&db, &rpc_client, &indexer_filters, block.clone()).await;
                 if result.is_err() {
                     trace!(
                         "[{}] Indexing {} ({}) from {} failed, retrying...",
-                        name,
+                        indexer_name,
                         block.header().height,
                         block.header().chain_id,
                         block.header().time
@@ -99,7 +106,7 @@ pub async fn run(name: &str, chain_id: &str, sources: &[Source], filters: &[Filt
             .map_err(|err| {
                 eyre!(
                     "[{}] Failed to index block {} ({}) from {}: {}",
-                    name,
+                    indexer_name,
                     block.header().height,
                     block.header().chain_id,
                     block.header().time,
@@ -111,16 +118,45 @@ pub async fn run(name: &str, chain_id: &str, sources: &[Source], filters: &[Filt
         Ok::<(), Report>(())
     });
 
+    // Create a task to handle historical indexing.
+    let historical_name = name.to_owned();
+    let historical_chain_id = chain_id.to_owned();
+    let historical_filters = filters.to_owned();
+    let historical_indexer_handle = tokio::spawn(async move {
+        let db = get_database_connection().await?;
+
+        loop {
+            let result = indexer::index_historical_blocks(
+                &historical_name,
+                &historical_chain_id,
+                &db,
+                &historical_filters,
+            )
+            .await;
+            if result.is_err() {
+                error!("Failed to index historical blocks: {}", result.unwrap_err());
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        }
+
+        Ok::<(), Report>(())
+    });
+
     let _ = try_flat_join!(
         provider_system_handle,
         sequencer_handle,
         dispatcher_handle,
         indexer_handle,
+        historical_indexer_handle
     )?;
 
     Ok(())
 }
 
+///
+/// Run every configured indexer.
+///
 pub async fn run_all() -> Result<()> {
     // Load the configurations from the pwd.
     let configs = Config::get_configs_from_pwd()?;
@@ -169,4 +205,16 @@ pub async fn run_all() -> Result<()> {
     }
 
     Ok(())
+}
+
+///
+/// Get a database connection based on the DATABASE_URL environment variable.
+///
+pub async fn get_database_connection() -> Result<DatabaseConnection> {
+    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+        "postgresql://postgres:postgres@localhost:5432/croncat_indexer".to_string()
+    });
+    Database::connect(database_url)
+        .await
+        .map_err(|err| err.into())
 }

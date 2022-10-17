@@ -10,20 +10,21 @@ use tendermint_rpc::{Client, HttpClient, Order};
 use tokio::time::timeout;
 use tokio_retry::strategy::{jitter, FibonacciBackoff};
 use tokio_retry::Retry;
-use tracing::trace;
+use tracing::{info, trace};
 
 use self::config::filter::Filter;
 
+use self::historical::get_block_gaps;
 // Sane model aliases
 use self::model::block::Model as DatabaseBlock;
 use crate::streams::block::Block;
 use model::block::ActiveModel as BlockModel;
 use model::transaction::ActiveModel as TransactionModel;
 
-// Tell clippy to ignore the generated model code.
 pub mod config;
+pub mod historical;
 #[allow(clippy::all)]
-pub mod model;
+pub mod model; // Tell clippy to ignore the generated model code.
 pub mod system;
 
 ///
@@ -236,6 +237,20 @@ pub async fn index_transactions_for_block(
         found_txs,
         block.height
     );
+
+    Ok(())
+}
+
+pub async fn index_historical_blocks(
+    _name: &str,
+    chain_id: &str,
+    db: &DatabaseConnection,
+    _filters: &[Filter],
+) -> Result<()> {
+    let gaps = get_block_gaps(db, chain_id.to_string(), 7).await?;
+
+    info!("Found {} gaps in block history", gaps.len());
+    info!("{:#?}", gaps);
 
     Ok(())
 }
