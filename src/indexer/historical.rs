@@ -77,6 +77,9 @@ impl BlockGap {
     }
 }
 
+///
+/// Implement [`Iterator`] for [`BlockRange`].
+///
 impl Iterator for BlockGap {
     type Item = BlockRange;
 
@@ -93,7 +96,7 @@ impl Iterator for BlockGap {
 }
 
 ///
-///
+/// Get historical gaps in the block sequence for a chain within a lookback period.
 ///
 pub async fn get_block_gaps(
     db: &DatabaseConnection,
