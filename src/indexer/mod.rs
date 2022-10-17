@@ -120,7 +120,7 @@ impl TransactionModel {
 pub async fn index_block(
     db: &DatabaseConnection,
     rpc_client: &HttpClient,
-    filters: &Vec<Filter>,
+    filters: &[Filter],
     block: Block,
 ) -> Result<()> {
     let block_insert_result = BlockModel::from(block).insert(db).await;
@@ -163,7 +163,7 @@ pub async fn index_block(
 pub async fn index_transactions_for_block(
     db: &DatabaseConnection,
     rpc_client: &HttpClient,
-    filters: &Vec<Filter>,
+    filters: &[Filter],
     block: &DatabaseBlock,
 ) -> Result<()> {
     trace!("Fetching transactions for block {}", block.height);

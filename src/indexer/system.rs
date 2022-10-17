@@ -5,15 +5,16 @@ use futures::StreamExt;
 use sea_orm::Database;
 use tendermint_rpc::HttpClient;
 use tokio::sync::{broadcast, mpsc};
-use tokio_retry::strategy::{jitter, FibonacciBackoff};
+use tokio_retry::strategy::{jitter, FibonacciBackoff, FixedInterval};
 use tokio_retry::Retry;
 use tracing::{error, info, trace, warn};
 
-use super::config::Config;
+use super::config::filter::Filter;
+use super::config::{Config, Source};
 use crate::indexer;
 use crate::streams::block::{poll_stream_blocks, ws_block_stream};
 
-pub async fn run(config: Config) -> Result<()> {
+pub async fn run(name: &str, chain_id: &str, sources: &[Source], filters: &[Filter]) -> Result<()> {
     // Setup system channels.
     let (provider_system_tx, provider_system_rx) = mpsc::unbounded_channel();
     let mut provider_system = ProviderSystem::new(provider_system_tx);
@@ -22,7 +23,7 @@ pub async fn run(config: Config) -> Result<()> {
     let mut last_polling_url = None;
 
     // Load sources from the configuration.
-    for source in config.sources {
+    for source in sources.iter().cloned() {
         let name = source.to_string();
 
         match source.source_type {
@@ -50,6 +51,9 @@ pub async fn run(config: Config) -> Result<()> {
     let mut dispatcher = Dispatcher::new(sequencer_rx, dispatcher_tx.clone());
     let dispatcher_handle = tokio::spawn(async move { dispatcher.fanout().await });
 
+    let name = name.to_owned();
+    let chain_id = chain_id.to_owned();
+    let filters = filters.to_owned();
     // Create an indexer to process the blocks.
     let indexer_handle = tokio::spawn(async move {
         let rpc_client = HttpClient::new(last_polling_url.unwrap().to_string().as_str())?;
@@ -57,9 +61,6 @@ pub async fn run(config: Config) -> Result<()> {
             "postgresql://postgres:postgres@localhost:5432/croncat_indexer".to_string()
         });
         let db = Database::connect(database_url).await?;
-        let name = config.name.clone();
-        let chain_id = config.chain_id.clone();
-        let filters = config.filters.clone();
 
         while let Ok(block) = dispatcher_rx.recv().await {
             let expected_chain_id = &chain_id;
@@ -132,16 +133,39 @@ pub async fn run_all() -> Result<()> {
 
     // Otherwise we should run all the indexers based on each config.
     let mut indexer_handles = FuturesUnordered::new();
+
     for (path, config) in Config::get_configs_from_pwd()? {
         info!("Starting indexer for {}: {}", config.name, path.display());
         trace!("Configuration details: {:#?}", config);
-        let indexer_handle = indexer::system::run(config);
+
+        let retry_strategy = FixedInterval::from_millis(5000);
+        let indexer_handle = tokio::spawn(async move {
+            Retry::spawn(retry_strategy, || async {
+                indexer::system::run(
+                    &config.name,
+                    &config.chain_id,
+                    &config.sources,
+                    &config.filters,
+                )
+                .await
+                .map_err(|err| {
+                    error!("Indexer {} ({}) crashed!", config.name, path.display());
+                    error!("Error: {}", err);
+                    error!("Retrying in 5 seconds...");
+
+                    err
+                })
+            })
+            .await?;
+
+            Ok::<(), Report>(())
+        });
         indexer_handles.push(indexer_handle);
     }
 
     // Wait for all the indexers to finish.
     while let Some(indexer_handle) = indexer_handles.next().await {
-        indexer_handle?;
+        indexer_handle??;
     }
 
     Ok(())
