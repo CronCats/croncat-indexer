@@ -1,30 +1,51 @@
 use std::time::Duration;
 
+use color_eyre::Report;
 use color_eyre::{eyre::eyre, Result};
 use sea_orm::entity::prelude::*;
 use sea_orm::Set;
+use snafu::Snafu;
 use tendermint::abci;
 use tendermint_rpc::endpoint::tx;
-use tendermint_rpc::query::Query;
-use tendermint_rpc::{Client, HttpClient, Order};
+use tendermint_rpc::HttpClient;
 use tokio::time::timeout;
 use tokio_retry::strategy::{jitter, FibonacciBackoff};
 use tokio_retry::Retry;
-use tracing::trace;
+use tracing::{info, trace};
 
 use self::config::filter::Filter;
-
+use self::historical::get_block_gaps;
+use crate::streams::block::Block;
 // Sane model aliases
 use self::model::block::Model as DatabaseBlock;
-use crate::streams::block::Block;
 use model::block::ActiveModel as BlockModel;
 use model::transaction::ActiveModel as TransactionModel;
 
-// Tell clippy to ignore the generated model code.
 pub mod config;
+pub mod historical;
 #[allow(clippy::all)]
-pub mod model;
+pub mod model; // Tell clippy to ignore the generated model code.
+pub mod rpc;
 pub mod system;
+
+///
+/// Block errors.
+///
+#[derive(Debug, Snafu)]
+pub enum BlockError {
+    #[snafu(display("Failed to connect to rpc endpoint: {}", source))]
+    Connect { source: Report },
+    #[snafu(display("Failed to subscribe to block events: {}", source))]
+    Subscribe { source: Report },
+    #[snafu(display("Block stream recv timed out after {timeout:?}"))]
+    Timeout { timeout: Duration },
+    #[snafu(display("Received event without block"))]
+    EventWithoutBlock,
+    #[snafu(display("Block stream recv error {source}"))]
+    TendermintError { source: tendermint_rpc::Error },
+    #[snafu(display("Unexpected error {source}"))]
+    UnexpectedError { source: Report },
+}
 
 ///
 /// Create a block database entry from a block.
@@ -56,6 +77,9 @@ impl From<Block> for BlockModel {
 /// Create a transaction database entry from a transaction.
 ///
 impl TransactionModel {
+    ///
+    /// Convert a transaction into a database entry.
+    ///
     fn from_response(block_id: Uuid, transaction: tx::Response) -> Result<Self> {
         let hash = transaction.hash.to_string();
         let code = transaction.tx_result.code.value() as i32;
@@ -80,6 +104,9 @@ impl TransactionModel {
         })
     }
 
+    ///
+    /// Decode events from a transaction.
+    ///
     fn decode_events(events: Vec<abci::Event>) -> Result<serde_json::Value> {
         let mut decoded_events = Vec::new();
         for event in events {
@@ -179,13 +206,7 @@ pub async fn index_transactions_for_block(
         // Get transactions for block from RPC.
         let txs = timeout(
             poll_timeout_duration,
-            rpc_client.tx_search(
-                Query::eq("tx.height", block.height),
-                true,
-                current_page,
-                100,
-                Order::Ascending,
-            ),
+            rpc::get_transactions_for_block(rpc_client, block.height, current_page),
         )
         .await?
         .map_err(|e| {
@@ -194,8 +215,7 @@ pub async fn index_transactions_for_block(
                 block.height,
                 e
             )
-        })?
-        .txs;
+        })?;
 
         // Filter transactions based on the provided filters.
         let txs = txs
@@ -236,6 +256,42 @@ pub async fn index_transactions_for_block(
         found_txs,
         block.height
     );
+
+    Ok(())
+}
+
+///
+/// Index historical blocks into the database.
+///
+pub async fn index_historical_blocks(
+    name: &str,
+    chain_id: &str,
+    rpc_client: &HttpClient,
+    db: &DatabaseConnection,
+    filters: &[Filter],
+) -> Result<()> {
+    let gaps = get_block_gaps(db, chain_id.to_string(), 7).await?;
+
+    if gaps.is_empty() {
+        info!("No gaps found, skipping historical block indexing");
+        return Ok(());
+    }
+
+    info!(
+        "Found {} gaps in block history for {} ({})",
+        name,
+        chain_id,
+        gaps.len()
+    );
+
+    for gap in gaps {
+        for range in gap {
+            let (start, end) = *range;
+            info!("Indexing gap blocks from {} to {}", start, end);
+            let block = rpc::get_block(rpc_client, start).await?;
+            index_block(db, rpc_client, filters, block.into()).await?;
+        }
+    }
 
     Ok(())
 }

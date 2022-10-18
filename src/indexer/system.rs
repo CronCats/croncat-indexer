@@ -2,7 +2,7 @@ use color_eyre::{eyre::eyre, Report, Result};
 use croncat_pipeline::{try_flat_join, Dispatcher, ProviderSystem, Sequencer};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
-use sea_orm::Database;
+use sea_orm::{Database, DatabaseConnection};
 use tendermint_rpc::HttpClient;
 use tokio::sync::{broadcast, mpsc};
 use tokio_retry::strategy::{jitter, FibonacciBackoff, FixedInterval};
@@ -10,11 +10,19 @@ use tokio_retry::Retry;
 use tracing::{error, info, trace, warn};
 
 use super::config::filter::Filter;
-use super::config::{Config, Source};
+use super::config::{Config, Source, SourceType};
 use crate::indexer;
 use crate::streams::block::{poll_stream_blocks, ws_block_stream};
 
-pub async fn run(name: &str, chain_id: &str, sources: &[Source], filters: &[Filter]) -> Result<()> {
+///
+/// Run a configured indexer.
+///
+pub async fn run(
+    name: &str,
+    chain_id: &str,
+    sources: &[Source],
+    filters: &Vec<Filter>,
+) -> Result<()> {
     // Setup system channels.
     let (provider_system_tx, provider_system_rx) = mpsc::unbounded_channel();
     let mut provider_system = ProviderSystem::new(provider_system_tx);
@@ -51,17 +59,15 @@ pub async fn run(name: &str, chain_id: &str, sources: &[Source], filters: &[Filt
     let mut dispatcher = Dispatcher::new(sequencer_rx, dispatcher_tx.clone());
     let dispatcher_handle = tokio::spawn(async move { dispatcher.fanout().await });
 
+    // Create an indexer to process the blocks.
     let name = name.to_owned();
     let chain_id = chain_id.to_owned();
     let filters = filters.to_owned();
-    // Create an indexer to process the blocks.
     let indexer_handle = tokio::spawn(async move {
         let rpc_client = HttpClient::new(last_polling_url.unwrap().to_string().as_str())?;
-        let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-            "postgresql://postgres:postgres@localhost:5432/croncat_indexer".to_string()
-        });
-        let db = Database::connect(database_url).await?;
+        let db = get_database_connection().await?;
 
+        // While there are still blocks to process.
         while let Ok(block) = dispatcher_rx.recv().await {
             let expected_chain_id = &chain_id;
             let chain_id = block.header().chain_id.to_string();
@@ -121,6 +127,48 @@ pub async fn run(name: &str, chain_id: &str, sources: &[Source], filters: &[Filt
     Ok(())
 }
 
+pub async fn run_historical(
+    name: &str,
+    chain_id: &str,
+    sources: &Vec<Source>,
+    filters: &Vec<Filter>,
+) -> Result<()> {
+    let name = name.to_owned();
+    let chain_id = chain_id.to_owned();
+    let filters = filters.to_owned();
+    let sources = sources.to_owned();
+    let historical_indexer_handle = tokio::spawn(async move {
+        let db = get_database_connection().await?;
+        let last_polling_url = sources
+            .iter()
+            .find(|s| s.source_type == SourceType::Polling)
+            .unwrap()
+            .url
+            .clone();
+        let rpc_client = HttpClient::new(last_polling_url.to_string().as_str())?;
+
+        loop {
+            let result =
+                indexer::index_historical_blocks(&name, &chain_id, &rpc_client, &db, &filters)
+                    .await;
+            if result.is_err() {
+                error!("Failed to index historical blocks: {}", result.unwrap_err());
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        }
+
+        Ok::<(), Report>(())
+    });
+
+    try_flat_join!(historical_indexer_handle)?;
+
+    Ok(())
+}
+
+///
+/// Run every configured indexer.
+///
 pub async fn run_all() -> Result<()> {
     // Load the configurations from the pwd.
     let configs = Config::get_configs_from_pwd()?;
@@ -139,17 +187,28 @@ pub async fn run_all() -> Result<()> {
         trace!("Configuration details: {:#?}", config);
 
         let retry_strategy = FixedInterval::from_millis(5000);
+
+        let indexer_retry_strategy = retry_strategy.clone();
+        let indexer_name = config.name.clone();
+        let indexer_chain_id = config.chain_id.clone();
+        let indexer_sources = config.sources.clone();
+        let indexer_filters = config.filters.clone();
+        let indexer_path = path.clone();
         let indexer_handle = tokio::spawn(async move {
-            Retry::spawn(retry_strategy, || async {
+            Retry::spawn(indexer_retry_strategy, || async {
                 indexer::system::run(
-                    &config.name,
-                    &config.chain_id,
-                    &config.sources,
-                    &config.filters,
+                    &indexer_name,
+                    &indexer_chain_id,
+                    &indexer_sources,
+                    &indexer_filters,
                 )
                 .await
                 .map_err(|err| {
-                    error!("Indexer {} ({}) crashed!", config.name, path.display());
+                    error!(
+                        "Indexer {} ({}) crashed!",
+                        indexer_name,
+                        indexer_path.display()
+                    );
                     error!("Error: {}", err);
                     error!("Retrying in 5 seconds...");
 
@@ -161,6 +220,35 @@ pub async fn run_all() -> Result<()> {
             Ok::<(), Report>(())
         });
         indexer_handles.push(indexer_handle);
+
+        // If we have a historical source then we should run that indexer.
+        let historical_retry_strategy = retry_strategy.clone();
+        let name = config.name.clone();
+        let chain_id = config.chain_id.clone();
+        let sources = config.sources.clone();
+        let filters = config.filters.clone();
+        let historical_indexer_handle = tokio::spawn(async move {
+            Retry::spawn(historical_retry_strategy, || async {
+                indexer::system::run_historical(&name, &chain_id, &sources, &filters)
+                    .await
+                    .map_err(|err| {
+                        error!(
+                            "Historical indexer {} ({}) crashed!",
+                            config.name,
+                            path.display()
+                        );
+                        error!("Error: {}", err);
+                        error!("Retrying in 5 seconds...");
+
+                        err
+                    })
+            })
+            .await?;
+
+            Ok::<(), Report>(())
+        });
+
+        indexer_handles.push(historical_indexer_handle);
     }
 
     // Wait for all the indexers to finish.
@@ -169,4 +257,16 @@ pub async fn run_all() -> Result<()> {
     }
 
     Ok(())
+}
+
+///
+/// Get a database connection based on the DATABASE_URL environment variable.
+///
+pub async fn get_database_connection() -> Result<DatabaseConnection> {
+    let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+        "postgresql://postgres:postgres@localhost:5432/croncat_indexer".to_string()
+    });
+    Database::connect(database_url)
+        .await
+        .map_err(|err| err.into())
 }

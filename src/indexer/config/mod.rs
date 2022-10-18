@@ -208,6 +208,7 @@ mod tests {
             yaml.trim(),
             indoc! {r#"
                 name: test
+                chain_id: uni-5
                 sources:
                 - name: block-stream
                   type: websocket
@@ -226,6 +227,7 @@ mod tests {
     fn config_deserialize() {
         let yaml = indoc! {r#"
             name: test
+            chain_id: uni-5
             sources:
             - name: block-stream
               type: websocket
