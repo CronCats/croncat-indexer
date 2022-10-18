@@ -13,7 +13,6 @@ use tokio_retry::Retry;
 use tracing::{info, trace};
 
 use self::config::filter::Filter;
-
 use self::historical::get_block_gaps;
 // Sane model aliases
 use self::model::block::Model as DatabaseBlock;
@@ -57,6 +56,9 @@ impl From<Block> for BlockModel {
 /// Create a transaction database entry from a transaction.
 ///
 impl TransactionModel {
+    ///
+    /// Convert a transaction into a database entry.
+    ///
     fn from_response(block_id: Uuid, transaction: tx::Response) -> Result<Self> {
         let hash = transaction.hash.to_string();
         let code = transaction.tx_result.code.value() as i32;
@@ -81,6 +83,9 @@ impl TransactionModel {
         })
     }
 
+    ///
+    /// Decode events from a transaction.
+    ///
     fn decode_events(events: Vec<abci::Event>) -> Result<serde_json::Value> {
         let mut decoded_events = Vec::new();
         for event in events {
@@ -241,6 +246,9 @@ pub async fn index_transactions_for_block(
     Ok(())
 }
 
+///
+/// Index historical blocks into the database.
+///
 pub async fn index_historical_blocks(
     _name: &str,
     chain_id: &str,

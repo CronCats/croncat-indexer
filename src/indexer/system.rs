@@ -60,21 +60,21 @@ pub async fn run(
     let dispatcher_handle = tokio::spawn(async move { dispatcher.fanout().await });
 
     // Create an indexer to process the blocks.
-    let indexer_name = name.to_owned();
-    let indexer_chain_id = chain_id.to_owned();
-    let indexer_filters = filters.to_owned();
+    let name = name.to_owned();
+    let chain_id = chain_id.to_owned();
+    let filters = filters.to_owned();
     let indexer_handle = tokio::spawn(async move {
         let rpc_client = HttpClient::new(last_polling_url.unwrap().to_string().as_str())?;
         let db = get_database_connection().await?;
 
         // While there are still blocks to process.
         while let Ok(block) = dispatcher_rx.recv().await {
-            let expected_chain_id = &indexer_chain_id;
-            let indexer_chain_id = block.header().chain_id.to_string();
-            if indexer_chain_id != *expected_chain_id {
+            let expected_chain_id = &chain_id;
+            let chain_id = block.header().chain_id.to_string();
+            if chain_id != *expected_chain_id {
                 warn!(
                     "Chain ID mismatch, expected {} but found {}",
-                    expected_chain_id, indexer_chain_id
+                    expected_chain_id, chain_id
                 );
                 warn!("No further processing will be done for this block");
                 continue;
@@ -82,19 +82,18 @@ pub async fn run(
 
             info!(
                 "[{}] Indexing block {} ({}) from {}",
-                indexer_name,
+                name,
                 block.header().height,
                 block.header().chain_id,
                 block.header().time
             );
             let retry_strategy = FibonacciBackoff::from_millis(100).map(jitter).take(10);
             Retry::spawn(retry_strategy, || async {
-                let result =
-                    indexer::index_block(&db, &rpc_client, &indexer_filters, block.clone()).await;
+                let result = indexer::index_block(&db, &rpc_client, &filters, block.clone()).await;
                 if result.is_err() {
                     trace!(
                         "[{}] Indexing {} ({}) from {} failed, retrying...",
-                        indexer_name,
+                        name,
                         block.header().height,
                         block.header().chain_id,
                         block.header().time
@@ -106,7 +105,7 @@ pub async fn run(
             .map_err(|err| {
                 eyre!(
                     "[{}] Failed to index block {} ({}) from {}: {}",
-                    indexer_name,
+                    name,
                     block.header().height,
                     block.header().chain_id,
                     block.header().time,
@@ -118,21 +117,27 @@ pub async fn run(
         Ok::<(), Report>(())
     });
 
+    let _ = try_flat_join!(
+        provider_system_handle,
+        sequencer_handle,
+        dispatcher_handle,
+        indexer_handle,
+    )?;
+
+    Ok(())
+}
+
+pub async fn run_historical(name: &str, chain_id: &str, filters: &Vec<Filter>) -> Result<()> {
+    // TODO: (SeedyROM) Move this outside of the run function.
     // Create a task to handle historical indexing.
-    let historical_name = name.to_owned();
-    let historical_chain_id = chain_id.to_owned();
-    let historical_filters = filters.to_owned();
+    let name = name.to_owned();
+    let chain_id = chain_id.to_owned();
+    let filters = filters.to_owned();
     let historical_indexer_handle = tokio::spawn(async move {
         let db = get_database_connection().await?;
 
         loop {
-            let result = indexer::index_historical_blocks(
-                &historical_name,
-                &historical_chain_id,
-                &db,
-                &historical_filters,
-            )
-            .await;
+            let result = indexer::index_historical_blocks(&name, &chain_id, &db, &filters).await;
             if result.is_err() {
                 error!("Failed to index historical blocks: {}", result.unwrap_err());
                 break;
@@ -143,13 +148,7 @@ pub async fn run(
         Ok::<(), Report>(())
     });
 
-    let _ = try_flat_join!(
-        provider_system_handle,
-        sequencer_handle,
-        dispatcher_handle,
-        indexer_handle,
-        historical_indexer_handle
-    )?;
+    try_flat_join!(historical_indexer_handle)?;
 
     Ok(())
 }
@@ -175,17 +174,28 @@ pub async fn run_all() -> Result<()> {
         trace!("Configuration details: {:#?}", config);
 
         let retry_strategy = FixedInterval::from_millis(5000);
+
+        let indexer_retry_strategy = retry_strategy.clone();
+        let indexer_name = config.name.clone();
+        let indexer_chain_id = config.chain_id.clone();
+        let indexer_sources = config.sources.clone();
+        let indexer_filters = config.filters.clone();
+        let indexer_path = path.clone();
         let indexer_handle = tokio::spawn(async move {
-            Retry::spawn(retry_strategy, || async {
+            Retry::spawn(indexer_retry_strategy, || async {
                 indexer::system::run(
-                    &config.name,
-                    &config.chain_id,
-                    &config.sources,
-                    &config.filters,
+                    &indexer_name,
+                    &indexer_chain_id,
+                    &indexer_sources,
+                    &indexer_filters,
                 )
                 .await
                 .map_err(|err| {
-                    error!("Indexer {} ({}) crashed!", config.name, path.display());
+                    error!(
+                        "Indexer {} ({}) crashed!",
+                        indexer_name,
+                        indexer_path.display()
+                    );
                     error!("Error: {}", err);
                     error!("Retrying in 5 seconds...");
 
@@ -197,6 +207,34 @@ pub async fn run_all() -> Result<()> {
             Ok::<(), Report>(())
         });
         indexer_handles.push(indexer_handle);
+
+        // If we have a historical source then we should run that indexer.
+        let historical_retry_strategy = retry_strategy.clone();
+        let name = config.name.clone();
+        let chain_id = config.chain_id.clone();
+        let filters = config.filters.clone();
+        let historical_indexer_handle = tokio::spawn(async move {
+            Retry::spawn(historical_retry_strategy, || async {
+                indexer::system::run_historical(&name, &chain_id, &filters)
+                    .await
+                    .map_err(|err| {
+                        error!(
+                            "Historical indexer {} ({}) crashed!",
+                            config.name,
+                            path.display()
+                        );
+                        error!("Error: {}", err);
+                        error!("Retrying in 5 seconds...");
+
+                        err
+                    })
+            })
+            .await?;
+
+            Ok::<(), Report>(())
+        });
+
+        indexer_handles.push(historical_indexer_handle);
     }
 
     // Wait for all the indexers to finish.

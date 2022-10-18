@@ -25,6 +25,7 @@ impl Deref for BlockRange {
         &self.0
     }
 }
+
 ///
 /// Describe a gap in the block sequence of historical data.
 ///
@@ -96,7 +97,7 @@ impl Iterator for BlockGap {
 }
 
 ///
-/// Get historical gaps in the block sequence for a chain within a lookback period.
+/// Get historical gaps in the block sequence for a chain within a lookback period (interval is days for now).
 ///
 pub async fn get_block_gaps(
     db: &DatabaseConnection,
