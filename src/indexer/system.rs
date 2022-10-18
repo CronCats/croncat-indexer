@@ -10,7 +10,7 @@ use tokio_retry::Retry;
 use tracing::{error, info, trace, warn};
 
 use super::config::filter::Filter;
-use super::config::{Config, Source};
+use super::config::{Config, Source, SourceType};
 use crate::indexer;
 use crate::streams::block::{poll_stream_blocks, ws_block_stream};
 
@@ -127,22 +127,35 @@ pub async fn run(
     Ok(())
 }
 
-pub async fn run_historical(name: &str, chain_id: &str, filters: &Vec<Filter>) -> Result<()> {
-    // TODO: (SeedyROM) Move this outside of the run function.
-    // Create a task to handle historical indexing.
+pub async fn run_historical(
+    name: &str,
+    chain_id: &str,
+    sources: &Vec<Source>,
+    filters: &Vec<Filter>,
+) -> Result<()> {
     let name = name.to_owned();
     let chain_id = chain_id.to_owned();
     let filters = filters.to_owned();
+    let sources = sources.to_owned();
     let historical_indexer_handle = tokio::spawn(async move {
         let db = get_database_connection().await?;
+        let last_polling_url = sources
+            .iter()
+            .find(|s| s.source_type == SourceType::Polling)
+            .unwrap()
+            .url
+            .clone();
+        let rpc_client = HttpClient::new(last_polling_url.to_string().as_str())?;
 
         loop {
-            let result = indexer::index_historical_blocks(&name, &chain_id, &db, &filters).await;
+            let result =
+                indexer::index_historical_blocks(&name, &chain_id, &rpc_client, &db, &filters)
+                    .await;
             if result.is_err() {
                 error!("Failed to index historical blocks: {}", result.unwrap_err());
                 break;
             }
-            tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
         }
 
         Ok::<(), Report>(())
@@ -212,10 +225,11 @@ pub async fn run_all() -> Result<()> {
         let historical_retry_strategy = retry_strategy.clone();
         let name = config.name.clone();
         let chain_id = config.chain_id.clone();
+        let sources = config.sources.clone();
         let filters = config.filters.clone();
         let historical_indexer_handle = tokio::spawn(async move {
             Retry::spawn(historical_retry_strategy, || async {
-                indexer::system::run_historical(&name, &chain_id, &filters)
+                indexer::system::run_historical(&name, &chain_id, &sources, &filters)
                     .await
                     .map_err(|err| {
                         error!(
