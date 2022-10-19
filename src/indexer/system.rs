@@ -5,6 +5,7 @@ use futures::StreamExt;
 use sea_orm::{Database, DatabaseConnection};
 use tendermint_rpc::HttpClient;
 use tokio::sync::{broadcast, mpsc};
+use tokio::task::JoinHandle;
 use tokio_retry::strategy::{jitter, FibonacciBackoff, FixedInterval};
 use tokio_retry::Retry;
 use tracing::{error, info, trace, warn};
@@ -137,7 +138,7 @@ pub async fn run_historical(
     let chain_id = chain_id.to_owned();
     let filters = filters.to_owned();
     let sources = sources.to_owned();
-    let historical_indexer_handle = tokio::spawn(async move {
+    let historical_indexer_handle: JoinHandle<Result<()>> = tokio::spawn(async move {
         let db = get_database_connection().await?;
         let last_polling_url = sources
             .iter()
@@ -148,17 +149,14 @@ pub async fn run_historical(
         let rpc_client = HttpClient::new(last_polling_url.to_string().as_str())?;
 
         loop {
-            let result =
-                indexer::index_historical_blocks(&name, &chain_id, &rpc_client, &db, &filters)
-                    .await;
-            if result.is_err() {
-                error!("Failed to index historical blocks: {}", result.unwrap_err());
-                break;
-            }
+            indexer::index_historical_blocks(&name, &chain_id, &rpc_client, &db, &filters)
+                .await
+                .map_err(|err| {
+                    error!("[{}] Failed to index historical blocks: {}", name, err);
+                    err
+                })?;
             tokio::time::sleep(std::time::Duration::from_secs(60)).await;
         }
-
-        Ok::<(), Report>(())
     });
 
     try_flat_join!(historical_indexer_handle)?;
