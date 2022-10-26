@@ -1,14 +1,16 @@
+use std::time::Duration;
+
 use color_eyre::{eyre::eyre, Report, Result};
 use croncat_pipeline::{try_flat_join, Dispatcher, ProviderSystem, Sequencer};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
-use sea_orm::{Database, DatabaseConnection};
+use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 use tendermint_rpc::HttpClient;
 use tokio::sync::{broadcast, mpsc};
 use tokio::task::JoinHandle;
 use tokio_retry::strategy::{jitter, FibonacciBackoff, FixedInterval};
 use tokio_retry::Retry;
-use tracing::{error, info, trace, warn};
+use tracing::{error, info, log, trace, warn};
 
 use super::config::filter::Filter;
 use super::config::{Config, Source, SourceType};
@@ -269,7 +271,15 @@ pub async fn get_database_connection() -> Result<DatabaseConnection> {
     let database_url = std::env::var("DATABASE_URL").unwrap_or_else(|_| {
         "postgresql://postgres:postgres@localhost:5432/croncat_indexer".to_string()
     });
-    Database::connect(database_url)
-        .await
-        .map_err(|err| err.into())
+
+    let mut opt = ConnectOptions::new(database_url);
+    opt.max_connections(25)
+        .min_connections(5)
+        .connect_timeout(Duration::from_secs(8))
+        .idle_timeout(Duration::from_secs(8))
+        .max_lifetime(Duration::from_secs(8))
+        .sqlx_logging(true)
+        .sqlx_logging_level(log::LevelFilter::Info);
+
+    Database::connect(opt).await.map_err(|err| err.into())
 }
