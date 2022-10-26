@@ -272,6 +272,7 @@ pub async fn get_database_connection() -> Result<DatabaseConnection> {
         "postgresql://postgres:postgres@localhost:5432/croncat_indexer".to_string()
     });
 
+    // Configure
     let mut opt = ConnectOptions::new(database_url);
     opt.max_connections(25)
         .min_connections(5)
@@ -279,7 +280,7 @@ pub async fn get_database_connection() -> Result<DatabaseConnection> {
         .idle_timeout(Duration::from_secs(8))
         .max_lifetime(Duration::from_secs(8))
         .sqlx_logging(true)
-        .sqlx_logging_level(log::LevelFilter::Info);
+        .sqlx_logging_level(log::LevelFilter::Debug);
 
     Database::connect(opt).await.map_err(|err| err.into())
 }
