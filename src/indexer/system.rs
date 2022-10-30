@@ -117,9 +117,12 @@ pub async fn run(
             })?;
         }
 
+        // Tell the join handle variable what type we are returning.
+        // This can also be done with a type annotation or by using the turbofish syntax.
         Ok::<(), Report>(())
     });
 
+    // Join the indexer tasks.
     let _ = try_flat_join!(
         provider_system_handle,
         sequencer_handle,
@@ -136,10 +139,13 @@ pub async fn run_historical(
     sources: &Vec<Source>,
     filters: &Vec<Filter>,
 ) -> Result<()> {
+    // Clone some local data to pass to the async block.
     let name = name.to_owned();
     let chain_id = chain_id.to_owned();
     let filters = filters.to_owned();
     let sources = sources.to_owned();
+
+    // Historical indexing is done in a separate task.
     let historical_indexer_handle: JoinHandle<Result<()>> = tokio::spawn(async move {
         let db = get_database_connection().await?;
         let last_polling_url = sources
@@ -272,13 +278,15 @@ pub async fn get_database_connection() -> Result<DatabaseConnection> {
         "postgresql://postgres:postgres@localhost:5432/croncat_indexer".to_string()
     });
 
-    // Configure
+    // Configure the database connection.
+    // Test 8 second timeout/idle timeout for most things.
+    // TODO: Make this configuration from the environment.
     let mut opt = ConnectOptions::new(database_url);
-    opt.max_connections(25)
-        .min_connections(5)
-        .connect_timeout(Duration::from_secs(8))
-        .idle_timeout(Duration::from_secs(8))
-        .max_lifetime(Duration::from_secs(8))
+    opt.max_connections(5)
+        .min_connections(1)
+        .connect_timeout(Duration::from_secs(30))
+        .idle_timeout(Duration::from_secs(15))
+        .max_lifetime(Duration::from_secs(60))
         .sqlx_logging(true)
         .sqlx_logging_level(log::LevelFilter::Debug);
 
