@@ -206,8 +206,6 @@ pub async fn index_transactions_for_block(
 
     // Handle pagination of transactions.
     while found_txs < block.num_txs {
-        println!("{} {} {}", found_txs, block.num_txs, current_page);
-
         current_page += 1;
 
         // Get transactions for block from RPC.
@@ -243,7 +241,6 @@ pub async fn index_transactions_for_block(
         .filter(|tx| {
             let mut matches = true;
             for filter in filters {
-                println!("Filtering transaction by: {:?}", filter);
                 if *filter != tx.tx_result.events {
                     matches = false;
                     break;
