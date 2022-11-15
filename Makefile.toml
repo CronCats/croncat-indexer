@@ -23,31 +23,6 @@ args = ["build"]
 command = "cargo"
 args = ["test"]
 
-[tasks.migrate-up]
-install_crate = "sea-orm-cli"
-command = "sea-orm-cli"
-args = ["migrate", "up"]
-
-[tasks.migrate-down]
-install_crate = "sea-orm-cli"
-command = "sea-orm-cli"
-args = ["migrate", "down"]
-
-[tasks.migrate-refresh]
-install_crate = "sea-orm-cli"
-command = "sea-orm-cli"
-args = ["migrate", "refresh"]
-
-[tasks.generate-migration]
-install_crate = "sea-orm-cli"
-command = "sea-orm-cli"
-args = ["migrate", "generate", "--", "${@}"]
-
-[tasks.generate-model]
-install_crate = "sea-orm-cli"
-command = "sea-orm-cli"
-args = ["generate", "entity", "-o", "src/indexer/model"]
-
 [tasks.pre-commit]
 dependencies = [
     "format",

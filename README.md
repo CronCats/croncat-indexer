@@ -22,28 +22,6 @@ You can have multiple configurations that match the pattern "\*.config.yaml" in 
 
 -   `cargo run`
 
-## Top Level Database Helpers
+## Database Manager
 
-See [here](./migration/README.md) for more info on migrations from `sea-orm`.
-
-**(Pro Tip: Make sure you have the env var `DATABASE_URL` set before running)**
-
-### Create a new migration
-
--   `cargo make generate-migration <name>`
-
-### Migrate latest database changes
-
--   `cargo make migrate-up`
-
-### Rollback latest database changes
-
--   `cargo make migrate-down`
-
-### Refresh database schema
-
--   `cargo make migrate-refresh`
-
-### Generate the model from the database
-
--   `cargo make generate-model`
+See [migration](./migration/README.md)

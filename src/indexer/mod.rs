@@ -169,7 +169,10 @@ pub async fn index_block(
             match err {
                 // If the block already exists, we can safely ignore the error.
                 DbErr::Query(message) => {
-                    if message.contains("duplicate key value violates unique constraint") {
+                    if message
+                        .to_string()
+                        .contains("duplicate key value violates unique constraint")
+                    {
                         trace!("Block already exists in database, skipping");
                     } else {
                         return Err(eyre!("Failed to insert block: {}", message));
