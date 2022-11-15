@@ -285,9 +285,8 @@ pub async fn get_database_connection() -> Result<DatabaseConnection> {
     opt.max_connections(5)
         .min_connections(1)
         .connect_timeout(Duration::from_secs(30))
-        .idle_timeout(Duration::from_secs(15))
-        .max_lifetime(Duration::from_secs(60))
-        .sqlx_logging(true)
+        .idle_timeout(Duration::from_secs(150000))
+        .max_lifetime(Duration::from_secs(600000))
         .sqlx_logging_level(log::LevelFilter::Debug);
 
     Database::connect(opt).await.map_err(|err| err.into())
