@@ -202,12 +202,16 @@ pub async fn index_transactions_for_block(
     let mut found_txs = 0;
     let mut current_page = 0;
 
+    let mut txs = vec![];
+
     // Handle pagination of transactions.
     while found_txs < block.num_txs {
+        println!("{} {} {}", found_txs, block.num_txs, current_page);
+
         current_page += 1;
 
         // Get transactions for block from RPC.
-        let txs = timeout(
+        let page_txs = timeout(
             poll_timeout_duration,
             rpc::get_transactions_for_block(rpc_client, block.height, current_page),
         )
@@ -220,38 +224,42 @@ pub async fn index_transactions_for_block(
             )
         })?;
 
-        // Filter transactions based on the provided filters.
-        let txs = txs
-            .into_iter()
-            .filter(|tx| {
-                let mut matches = true;
-                for filter in filters {
-                    if *filter != tx.tx_result.events {
-                        matches = false;
-                        break;
-                    }
-                }
-                matches
-            })
-            .collect::<Vec<_>>();
-
         // Error if we didn't find any transactions, when we should have.
-        if txs.is_empty() {
+        if page_txs.is_empty() {
             return Err(eyre!(
                 "No transactions found from RPC for block with transactions {}",
                 block.height
             ));
         }
 
-        // Insert transactions into the database.
-        for tx in txs.iter() {
-            let transaction = TransactionModel::from_response(block.id, tx.clone())?;
-            transaction
-                .insert(db)
-                .await
-                .map_err(|e| eyre!("Failed to insert transaction: {}", e))?;
-            found_txs += 1;
-        }
+        found_txs += page_txs.len() as i64;
+
+        txs.extend(page_txs);
+    }
+
+    // Filter transactions based on the provided filters.
+    let txs = txs
+        .into_iter()
+        .filter(|tx| {
+            let mut matches = true;
+            for filter in filters {
+                println!("Filtering transaction by: {:?}", filter);
+                if *filter != tx.tx_result.events {
+                    matches = false;
+                    break;
+                }
+            }
+            matches
+        })
+        .collect::<Vec<_>>();
+
+    // Insert transactions into the database.
+    for tx in txs.iter() {
+        let transaction = TransactionModel::from_response(block.id, tx.clone())?;
+        transaction
+            .insert(db)
+            .await
+            .map_err(|e| eyre!("Failed to insert transaction: {}", e))?;
     }
 
     trace!(

@@ -24,4 +24,4 @@ You can have multiple configurations that match the pattern "\*.config.yaml" in 
 
 ## Database Manager
 
-See [migration/README.md](./migration/README.md).
+See [migration/README.md](./migration/README.md)
