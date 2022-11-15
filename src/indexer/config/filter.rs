@@ -4,6 +4,7 @@ use color_eyre::Report;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use tendermint::abci;
+use tendermint_rpc::endpoint::tx;
 
 #[derive(Debug, Clone)]
 /// Filter a field by a regex.
@@ -66,6 +67,12 @@ pub struct Filter {
     #[serde(alias = "type", rename = "type")]
     pub type_str: FilterPattern,
     pub attributes: Vec<AttributeFilter>,
+}
+
+impl Filter {
+    pub fn matches(&self, response: &tx::Response) -> bool {
+        *self == response.tx_result.events
+    }
 }
 
 impl PartialEq<Vec<abci::Event>> for Filter {

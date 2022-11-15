@@ -241,9 +241,8 @@ pub async fn index_transactions_for_block(
         .filter(|tx| {
             let mut matches = true;
             for filter in filters {
-                if *filter != tx.tx_result.events {
+                if !filter.matches(tx) {
                     matches = false;
-                    break;
                 }
             }
             matches
