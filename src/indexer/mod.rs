@@ -239,13 +239,13 @@ pub async fn index_transactions_for_block(
     let txs = txs
         .into_iter()
         .filter(|tx| {
-            let mut matches = true;
+            let mut matches = 0;
             for filter in filters {
-                if !filter.matches(tx) {
-                    matches = false;
+                if filter.matches(tx) {
+                    matches += 1
                 }
             }
-            matches
+            matches == filters.len()
         })
         .collect::<Vec<_>>();
 

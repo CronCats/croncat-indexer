@@ -77,26 +77,23 @@ impl Filter {
 
 impl PartialEq<Vec<abci::Event>> for Filter {
     fn eq(&self, other: &Vec<abci::Event>) -> bool {
-        let mut matches = 0;
+        let mut matches = false;
         for event in other {
             if self.type_str.is_match(event.type_str.as_str()) {
-                matches += 1;
                 for attribute in &event.attributes {
                     for filter in &self.attributes {
                         if filter.key.is_match(attribute.key.to_string().as_str()) {
                             if let Some(value) = &filter.value {
                                 if value.is_match(attribute.value.to_string().as_str()) {
-                                    matches += 1;
+                                    matches = true;
                                 }
-                            } else {
-                                matches += 1;
                             }
                         }
                     }
                 }
             }
         }
-        matches == self.attributes.len() + 1
+        matches
     }
 }
 
