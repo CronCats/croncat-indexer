@@ -147,6 +147,9 @@ pub async fn run_historical(
 
     // Historical indexing is done in a separate task.
     let historical_indexer_handle: JoinHandle<Result<()>> = tokio::spawn(async move {
+        // Initially wait 30 seconds before checking historical gaps.
+        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+
         let db = get_database_connection().await?;
         let last_polling_url = sources
             .iter()
