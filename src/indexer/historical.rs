@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::{ops::Deref, time::Duration};
 
 use chrono::NaiveDateTime;
 use color_eyre::Result;
@@ -51,7 +51,7 @@ impl BlockGap {
                    lead(height) OVER (ORDER BY height) AS next_block
             FROM   block
             WHERE  chain_id = $1
-            AND    time > (NOW() - ($2 || ' day')::INTERVAL)
+            AND    time > (NOW() - ($2 || ' seconds')::INTERVAL)
         ) inner_alias
         WHERE height + 1 <> next_block
         ORDER BY start_time DESC;
@@ -65,12 +65,12 @@ impl BlockGap {
     async fn query(
         db: &DatabaseConnection,
         chain_id: String,
-        lookback_in_days: i64,
+        lookback: Duration,
     ) -> Result<Vec<Self>> {
         Self::find_by_statement(Statement::from_sql_and_values(
             DbBackend::Postgres,
             Self::query_str(),
-            vec![chain_id.into(), lookback_in_days.to_string().into()],
+            vec![chain_id.into(), lookback.as_secs().to_string().into()],
         ))
         .all(db)
         .await
@@ -102,9 +102,9 @@ impl Iterator for BlockGap {
 pub async fn get_block_gaps(
     db: &DatabaseConnection,
     chain_id: String,
-    lookback_in_days: i64,
+    lookback: Duration,
 ) -> Result<Vec<BlockGap>> {
-    BlockGap::query(db, chain_id, lookback_in_days).await
+    BlockGap::query(db, chain_id, lookback).await
 }
 
 #[cfg(test)]

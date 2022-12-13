@@ -192,7 +192,7 @@ pub async fn run_all() -> Result<()> {
     let mut indexer_handles = FuturesUnordered::new();
 
     for (path, config) in Config::get_configs_from_pwd()? {
-        info!("Starting indexer for {}: {}", config.name, path.display());
+        info!("[{}] Starting indexer: {}", config.name, path.display());
         trace!("Configuration details: {:#?}", config);
 
         let retry_strategy = FixedInterval::from_millis(5000);
