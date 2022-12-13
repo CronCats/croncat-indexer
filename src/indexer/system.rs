@@ -230,39 +230,43 @@ pub async fn run_all() -> Result<()> {
         });
         indexer_handles.push(indexer_handle);
 
-        // If we have a historical source then we should run that indexer.
-        let historical_retry_strategy = retry_strategy.clone();
-        let historical_name = config.name.clone();
-        let historical_chain_id = config.chain_id.clone();
-        let historical_sources = config.sources.clone();
-        let historical_filters = config.filters.clone();
-        let historical_indexer_handle = tokio::spawn(async move {
-            Retry::spawn(historical_retry_strategy, || async {
-                indexer::system::run_historical(
-                    &historical_name,
-                    &historical_chain_id,
-                    &historical_sources,
-                    &historical_filters,
-                )
-                .await
-                .map_err(|err| {
-                    error!(
-                        "Historical indexer {} ({}) crashed!",
-                        config.name,
-                        path.display()
-                    );
-                    error!("Error: {}", err);
-                    error!("Retrying in 5 seconds...");
+        if std::env::var("CRONCAT_INDEXER_HISTORICAL").unwrap_or_else(|_| "false".to_string())
+            == "true"
+        {
+            // If we have a historical source then we should run that indexer.
+            let historical_retry_strategy = retry_strategy.clone();
+            let historical_name = config.name.clone();
+            let historical_chain_id = config.chain_id.clone();
+            let historical_sources = config.sources.clone();
+            let historical_filters = config.filters.clone();
+            let historical_indexer_handle = tokio::spawn(async move {
+                Retry::spawn(historical_retry_strategy, || async {
+                    indexer::system::run_historical(
+                        &historical_name,
+                        &historical_chain_id,
+                        &historical_sources,
+                        &historical_filters,
+                    )
+                    .await
+                    .map_err(|err| {
+                        error!(
+                            "Historical indexer {} ({}) crashed!",
+                            config.name,
+                            path.display()
+                        );
+                        error!("Error: {}", err);
+                        error!("Retrying in 5 seconds...");
 
-                    err
+                        err
+                    })
                 })
-            })
-            .await?;
+                .await?;
 
-            Ok::<(), Report>(())
-        });
+                Ok::<(), Report>(())
+            });
 
-        indexer_handles.push(historical_indexer_handle);
+            indexer_handles.push(historical_indexer_handle);
+        }
     }
 
     // Wait for all the indexers to finish.
