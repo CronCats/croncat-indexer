@@ -174,10 +174,10 @@ pub async fn index_block_range(
 
         current_height += page_size;
 
-        tokio::time::sleep(Duration::from_secs(1)).await;
+        tokio::time::sleep(Duration::from_secs(3)).await;
     }
 
-    tokio::time::sleep(Duration::from_secs(1)).await;
+    tokio::time::sleep(Duration::from_secs(3)).await;
 
     Ok(())
 }
@@ -318,7 +318,8 @@ pub async fn index_historical_blocks(
     db: &DatabaseConnection,
     filters: &[Filter],
 ) -> Result<()> {
-    let lookback_duration_in_secs = 60 * 60;
+    // TODO: Lookback 1 day for now.
+    let lookback_duration_in_secs = 60 * 60 * 24;
     let gaps = get_block_gaps(
         db,
         chain_id.to_string(),

@@ -54,7 +54,7 @@ impl BlockGap {
             AND    time > (NOW() - ($2 || ' seconds')::INTERVAL)
         ) inner_alias
         WHERE height + 1 <> next_block
-        ORDER BY start_time DESC;
+        ORDER BY start_time ASC;
         "# }
         .trim()
     }

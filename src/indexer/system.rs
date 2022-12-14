@@ -44,7 +44,7 @@ pub async fn run(
             indexer::config::SourceType::Polling => {
                 last_polling_url = Some(source.url.clone());
                 provider_system
-                    .add_provider_stream(name, poll_stream_blocks(source.url.to_string(), 3));
+                    .add_provider_stream(name, poll_stream_blocks(source.url.to_string(), 4));
             }
         }
     }
@@ -148,7 +148,7 @@ pub async fn run_historical(
     // Historical indexing is done in a separate task.
     let historical_indexer_handle: JoinHandle<Result<()>> = tokio::spawn(async move {
         // Initially wait 30 seconds before checking historical gaps.
-        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(15)).await;
 
         let db = get_database_connection().await?;
         let last_polling_url = sources
@@ -166,7 +166,7 @@ pub async fn run_historical(
                     error!("[{}] Failed to index historical blocks: {}", name, err);
                     err
                 })?;
-            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            tokio::time::sleep(std::time::Duration::from_secs(15)).await;
         }
     });
 
