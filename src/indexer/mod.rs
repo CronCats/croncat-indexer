@@ -7,7 +7,8 @@ use sea_orm::Set;
 use snafu::Snafu;
 use tendermint::abci;
 use tendermint_rpc::endpoint::tx;
-use tendermint_rpc::HttpClient;
+use tendermint_rpc::query::Query;
+use tendermint_rpc::{Client, HttpClient, Order};
 use tokio::time::timeout;
 use tokio_retry::strategy::{jitter, FibonacciBackoff};
 use tokio_retry::Retry;
@@ -142,6 +143,46 @@ impl TransactionModel {
 }
 
 ///
+/// Index a range of blocks into the database.
+///
+pub async fn index_block_range(
+    db: &DatabaseConnection,
+    rpc_client: &HttpClient,
+    filters: &[Filter],
+    start: i64,
+    end: i64,
+) -> Result<()> {
+    let page_size = 50;
+    let mut current_height = start;
+
+    for _ in 0..((end - start) / page_size) {
+        let blocks = rpc_client
+            .block_search(
+                Query::gte("block.height".to_string(), current_height)
+                    .and_lte("block.height", current_height + page_size),
+                1,
+                page_size as u8,
+                Order::Ascending,
+            )
+            .await?;
+        let blocks = blocks.blocks;
+
+        for block in blocks {
+            index_block(db, rpc_client, filters, block.block.into()).await?;
+            current_height += 1;
+        }
+
+        current_height += page_size;
+
+        tokio::time::sleep(Duration::from_secs(3)).await;
+    }
+
+    tokio::time::sleep(Duration::from_secs(3)).await;
+
+    Ok(())
+}
+
+///
 /// Index a block into the database.
 ///
 pub async fn index_block(
@@ -156,7 +197,7 @@ pub async fn index_block(
         Ok(block) => {
             // If we have transactions to index, do so.
             if block.num_txs > 0 {
-                let retry_strategy = FibonacciBackoff::from_millis(50).map(jitter).take(15);
+                let retry_strategy = FibonacciBackoff::from_millis(100).map(jitter).take(15);
 
                 // Retry the transaction query up to 10 times.
                 Retry::spawn(retry_strategy, || async {
@@ -277,7 +318,14 @@ pub async fn index_historical_blocks(
     db: &DatabaseConnection,
     filters: &[Filter],
 ) -> Result<()> {
-    let gaps = get_block_gaps(db, chain_id.to_string(), 7).await?;
+    // TODO: Lookback 1 day for now.
+    let lookback_duration_in_secs = 60 * 60 * 24;
+    let gaps = get_block_gaps(
+        db,
+        chain_id.to_string(),
+        Duration::from_secs(lookback_duration_in_secs),
+    )
+    .await?;
 
     if gaps.is_empty() {
         info!("No gaps found, skipping historical block indexing");
@@ -285,19 +333,19 @@ pub async fn index_historical_blocks(
     }
 
     info!(
-        "Found {} gaps in block history for {} ({})",
+        "[{}] Found {} gaps in block history for ({})",
         name,
         chain_id,
         gaps.len()
     );
 
     for gap in gaps {
-        for range in gap {
-            let (start, end) = *range;
-            info!("Indexing gap blocks from {} to {}", start, end);
-            let block = rpc::get_block(rpc_client, start).await?;
-            index_block(db, rpc_client, filters, block.into()).await?;
-        }
+        info!(
+            "[{}] Indexing historical blocks for ({}) from {} to {}",
+            name, chain_id, gap.start, gap.end
+        );
+
+        index_block_range(db, rpc_client, filters, gap.start, gap.end).await?;
     }
 
     Ok(())
